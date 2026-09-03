@@ -14,6 +14,7 @@ import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/dashboard/StatCard";
 import Badge from "../../components/common/Badge";
 import { getAdminDashboard } from "../../services/adminService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
 
 const money = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -45,6 +46,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useRealtimeRefresh(["visits", "invoices", "patients"], load);
   return (
     <>
       <PageHeader

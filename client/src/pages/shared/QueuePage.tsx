@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import PageHeader from "../../components/common/PageHeader";
 import Badge from "../../components/common/Badge";
 import { clinic, unwrap } from "../../services/clinicService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
 
 type Visit = {
   id: number;
@@ -68,6 +69,8 @@ export default function QueuePage({ role }: { role: string }) {
   useEffect(() => {
     load();
   }, []);
+
+  useRealtimeRefresh(["visits", "patients"], load);
 
   // Voice Announcement
   function announcePatient(queueNumber: string, patientName: string, poliName?: string) {

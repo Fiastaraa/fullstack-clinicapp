@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import PageHeader from "../../components/common/PageHeader";
 import { clinic, unwrap } from "../../services/clinicService";
 import { downloadInvoicePdf } from "../../utils/invoicePdf";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
+import { paymentService } from "../../services/paymentService";
 
 type Invoice = {
   id: number;
@@ -38,31 +40,22 @@ type Invoice = {
     name?: string;
     medicine?: string;
     quantity?: number;
-    qty?: number;
     price?: number;
-    amount?: number;
   }>;
 
-  prescriptions?: Array<{
-    name?: string;
-    medicine?: string;
-    quantity?: number;
-    qty?: number;
-    price?: number;
-    amount?: number;
-  }>;
-
-  payment?: {
-    method?: string;
-    paidDate?: string;
-  };
+  prescriptions?: any[];
 };
 
 type VisitRow = {
-  invoice?: Invoice | null;
+  id: number;
+  visitDate: string;
+  patient?: any;
+  doctor?: any;
+  invoice?: any;
+  prescriptions?: any[];
 };
 
-function formatRupiah(value = 0) {
+function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
@@ -74,8 +67,9 @@ export default function InvoicesPage() {
   const [rows, setRows] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [payingId, setPayingId] = useState<number | null>(null);
 
-  async function loadInvoices() {
+  const loadInvoices = useCallback(async () => {
     try {
       setLoading(true);
       setMessage("");
@@ -93,30 +87,58 @@ export default function InvoicesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadInvoices();
-  }, []);
+  }, [loadInvoices]);
+
+  // Real-time auto fetch when invoices or visits change
+  useRealtimeRefresh(["invoices", "visits"], loadInvoices);
 
   async function pay(id: number) {
     try {
+      setPayingId(id);
       setMessage("");
-
-      /*
-       * Mengikuti method payment yang sudah tersedia
-       * pada clinic service.
-       */
       await clinic.payInvoice(id);
-
-      setMessage("Payment confirmed successfully.");
-
+      setMessage("Pembayaran tunai berhasil dikonfirmasi.");
       await loadInvoices();
     } catch (error: any) {
       setMessage(
         error?.response?.data?.message ||
-          "Failed to confirm payment."
+          "Gagal mengonfirmasi pembayaran."
       );
+    } finally {
+      setPayingId(null);
+    }
+  }
+
+  async function payWithMidtrans(id: number) {
+    try {
+      setPayingId(id);
+      setMessage("");
+      await paymentService.payInvoiceWithMidtrans(
+        id,
+        async () => {
+          setMessage("Pembayaran Midtrans berhasil diselesaikan!");
+          await loadInvoices();
+        },
+        async () => {
+          setMessage("Menunggu konfirmasi pembayaran Midtrans...");
+          await loadInvoices();
+        },
+        (err) => {
+          setMessage(`Gagal memproses Midtrans: ${err}`);
+        },
+      );
+    } catch (error: any) {
+      setMessage(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Gagal membuka pembayaran Midtrans.",
+      );
+    } finally {
+      setPayingId(null);
     }
   }
 
@@ -278,19 +300,29 @@ export default function InvoicesPage() {
                       <td className="px-5 py-5">
                         <div className="flex flex-wrap items-center gap-2">
                           {status === "PAID" ? (
-                            <span className="text-sm text-slate-400">
-                              Paid
+                            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+                              Lunas
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                pay(invoice.id)
-                              }
-                              className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-600"
-                            >
-                              Mark as Paid
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                disabled={payingId === invoice.id}
+                                onClick={() => payWithMidtrans(invoice.id)}
+                                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {payingId === invoice.id ? "Memproses..." : "Bayar Midtrans"}
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={payingId === invoice.id}
+                                onClick={() => pay(invoice.id)}
+                                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                Tunai / Cash
+                              </button>
+                            </>
                           )}
 
                           <button

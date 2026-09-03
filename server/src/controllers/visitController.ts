@@ -191,7 +191,7 @@ export async function createVisit(
     const outcome = await prisma.$transaction(async (tx) => {
       // Transaction-scoped locks prevent duplicate active visits and queue
       // numbers when two devices register at nearly the same time.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(1, hashtext(${patientId}::text))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(1, ${patientId}::int)`;
 
       const existing = await tx.visit.findFirst({
         where: {
@@ -203,7 +203,7 @@ export async function createVisit(
       });
       if (existing) return { existing, visit: null };
 
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(2, hashtext(${String(queueLockKey)}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(2, ${queueLockKey}::int)`;
       const queueCount = await tx.visit.count({
         where: {
           poliId,

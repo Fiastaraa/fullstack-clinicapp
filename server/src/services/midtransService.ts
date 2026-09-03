@@ -46,14 +46,17 @@ export interface MidtransNotificationPayload {
 
 export class MidtransService {
   public get serverKey(): string {
-    return process.env.MIDTRANS_SERVER_KEY || "";
+    return (process.env.MIDTRANS_SERVER_KEY || "").trim();
   }
 
   public get clientKey(): string {
-    return process.env.MIDTRANS_CLIENT_KEY || "";
+    return (process.env.MIDTRANS_CLIENT_KEY || "").trim();
   }
 
   public get isProduction(): boolean {
+    const sKey = this.serverKey;
+    if (sKey.startsWith("SB-Mid-")) return false;
+    if (sKey.startsWith("Mid-server-")) return true;
     return process.env.MIDTRANS_IS_PRODUCTION === "true";
   }
 
