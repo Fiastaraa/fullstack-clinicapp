@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.expo/
+.env
+*.local
+*.log
+.DS_Store
+.idea/
+.vscode/
+coverage/
+server/src/generated/prisma/

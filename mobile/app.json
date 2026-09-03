@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "AssistDoc Patient",
+    "slug": "assistdoc-patient",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "assistdoc",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "android": {
+      "package": "com.assistdoc.patient"
+    },
+    "ios": {
+      "bundleIdentifier": "com.assistdoc.patient"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

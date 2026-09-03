@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+:root {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  color: #1B3C53;
+  background: #F8F9FA;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #F8F9FA;
+  color: #1B3C53;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* AssistDoc Human-Designed Minimalist System */
+/* Primary: #1B3C53 (Navy/Slate) | Secondary: #DCD7C9 (Warm Sand) | Surfaces: White #FFFFFF */
+
+.ad-shell {
+  min-height: 100vh;
+  background: #F8F9FA;
+}
+
+.ad-card {
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(27, 60, 83, 0.04);
+}
+
+.ad-panel {
+  border-radius: 10px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+}
+
+.ad-navy {
+  background: #1B3C53;
+  color: #FFFFFF;
+}
+
+.ad-sand {
+  background: #DCD7C9;
+  color: #1B3C53;
+}
+
+.ad-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 8px;
+  padding: 0.6rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  transition: all 0.15s ease-in-out;
+}
+
+.ad-btn-primary {
+  background: #1B3C53;
+  color: #FFFFFF;
+  border: 1px solid #1B3C53;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.ad-btn-primary:hover {
+  background: #152e40;
+  border-color: #152e40;
+}
+
+.ad-btn-sand {
+  background: #DCD7C9;
+  color: #1B3C53;
+  border: 1px solid #DCD7C9;
+}
+
+.ad-btn-sand:hover {
+  background: #cec7b5;
+}
+
+.ad-btn-outline {
+  background: #FFFFFF;
+  color: #1B3C53;
+  border: 1px solid #DCD7C9;
+}
+
+.ad-btn-outline:hover {
+  background: #F8F9FA;
+  border-color: #1B3C53;
+}
+
+.ad-btn-danger {
+  background: #DC2626;
+  color: #FFFFFF;
+}
+
+.ad-btn-danger:hover {
+  background: #B91C1C;
+}
+
+.ad-input {
+  width: 100%;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  background: #FFFFFF;
+  padding: 0.65rem 0.85rem;
+  outline: none;
+  color: #1B3C53;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ad-input:focus {
+  border-color: #1B3C53;
+  box-shadow: 0 0 0 2px rgba(27, 60, 83, 0.12);
+}
+
+.ad-section-title {
+  font-weight: 800;
+  color: #1B3C53;
+}
+
+.ad-muted {
+  color: #64748B;
+}
+
+/* Crisp table styling */
+table {
+  border-collapse: collapse;
+}
+
+th {
+  font-weight: 700;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
