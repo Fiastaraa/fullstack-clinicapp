@@ -7,15 +7,21 @@ export function useRealtimeRefresh(
 ) {
   const { change } = useRealtime();
   const callbackRef = useRef(onRefresh);
+  const lastProcessedRef = useRef<string | null>(null);
+  const resourcesKey = resources.slice().sort().join(",");
 
   useEffect(() => {
     callbackRef.current = onRefresh;
   }, [onRefresh]);
 
   useEffect(() => {
-    if (!change) return;
-    if (resources.includes(change.resource)) {
+    if (!change || !change.changedAt) return;
+    if (lastProcessedRef.current === change.changedAt) return;
+
+    const resourceList = resourcesKey.split(",") as ClinicResource[];
+    if (resourceList.includes(change.resource)) {
+      lastProcessedRef.current = change.changedAt;
       void callbackRef.current();
     }
-  }, [change, resources]);
+  }, [change, resourcesKey]);
 }

@@ -38,18 +38,40 @@ export function loadSnapScript(scriptUrl: string, clientKey: string): Promise<vo
   if (snapScriptPromise) return snapScriptPromise;
 
   snapScriptPromise = new Promise((resolve, reject) => {
-    const existingScript = document.querySelector(`script[src="${scriptUrl}"]`);
-    if (existingScript) {
-      resolve();
+    let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement | null;
+
+    const checkSnapReady = () => {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (window.snap) {
+          clearInterval(interval);
+          resolve();
+        } else if (attempts > 40) {
+          clearInterval(interval);
+          snapScriptPromise = null;
+          reject(new Error("Midtrans Snap script loaded but window.snap is unavailable"));
+        }
+      }, 100);
+    };
+
+    if (script) {
+      if (window.snap) {
+        resolve();
+      } else {
+        checkSnapReady();
+      }
       return;
     }
 
-    const script = document.createElement("script");
+    script = document.createElement("script");
     script.src = scriptUrl;
     if (clientKey) {
       script.setAttribute("data-client-key", clientKey);
     }
-    script.onload = () => resolve();
+    script.onload = () => {
+      checkSnapReady();
+    };
     script.onerror = () => {
       snapScriptPromise = null;
       reject(new Error("Gagal memuat Midtrans Snap script"));
@@ -74,6 +96,11 @@ export const paymentService = {
     return res.data.data;
   },
 
+  async syncPaymentStatus(orderId: string, forceSettle = false): Promise<any> {
+    const res = await api.get(`/payments/status/${orderId}${forceSettle ? "?forceSettle=true" : ""}`);
+    return res.data;
+  },
+
   async mockSettle(invoiceId: number, method: "E_WALLET" | "TRANSFER" = "E_WALLET"): Promise<void> {
     await api.post("/payments/mock-settle", { invoiceId, method });
   },
@@ -89,32 +116,41 @@ export const paymentService = {
       this.createSnapToken(invoiceId),
     ]);
 
-    // Simulator / Mock Mode if keys are not configured or returns mock token
-    if (snapData.token.startsWith("mock-snap-") || !config.isConfigured) {
-      await this.mockSettle(invoiceId);
-      if (onSuccess) onSuccess();
-      return;
-    }
-
-    // Load Midtrans Snap.js script dynamically
+    // Ensure Snap script is loaded
     await loadSnapScript(config.snapScriptUrl, config.clientKey);
 
     if (!window.snap) {
-      throw new Error("Midtrans Snap tidak tersedia.");
+      throw new Error("Midtrans Snap tidak tersedia. Pastikan koneksi internet stabil.");
     }
 
+    // Always trigger official Midtrans Snap popup
     window.snap.pay(snapData.token, {
-      onSuccess: () => {
+      onSuccess: async () => {
+        try {
+          await this.syncPaymentStatus(snapData.orderId, true);
+        } catch (e) {
+          console.warn("Sync status failed:", e);
+        }
         if (onSuccess) onSuccess();
       },
-      onPending: () => {
+      onPending: async () => {
+        try {
+          await this.syncPaymentStatus(snapData.orderId, false);
+        } catch (e) {
+          console.warn("Sync status failed:", e);
+        }
         if (onPending) onPending();
       },
       onError: (result: any) => {
         const msg = result?.status_message || "Pembayaran Midtrans gagal";
         if (onError) onError(msg);
       },
-      onClose: () => {
+      onClose: async () => {
+        try {
+          await this.syncPaymentStatus(snapData.orderId, false);
+        } catch (e) {
+          console.warn("Sync status failed:", e);
+        }
         if (onPending) onPending();
       },
     });

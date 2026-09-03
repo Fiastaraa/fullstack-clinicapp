@@ -69,9 +69,9 @@ export default function InvoicesPage() {
   const [message, setMessage] = useState("");
   const [payingId, setPayingId] = useState<number | null>(null);
 
-  const loadInvoices = useCallback(async () => {
+  const loadInvoices = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       setMessage("");
 
       const response = await clinic.visits();
@@ -90,7 +90,7 @@ export default function InvoicesPage() {
   }, []);
 
   useEffect(() => {
-    loadInvoices();
+    loadInvoices(true);
   }, [loadInvoices]);
 
   // Real-time auto fetch when invoices or visits change

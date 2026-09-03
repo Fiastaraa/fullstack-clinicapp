@@ -45,7 +45,7 @@ export async function registerUser(input: RegisterInput) {
 
   const user = await prisma.$transaction(async (tx) => {
     if (input.nik) {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(4, hashtext(${input.nik}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(4, hashtext(${input.nik}))`;
     }
 
     const existingPatient = input.nik

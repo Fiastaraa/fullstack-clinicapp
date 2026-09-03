@@ -21,6 +21,7 @@ export interface SnapTransactionPayload {
   };
   customer_details?: CustomerDetail;
   item_details?: ItemDetail[];
+  enabled_payments?: string[];
 }
 
 export interface SnapTransactionResponse {
@@ -54,10 +55,13 @@ export class MidtransService {
   }
 
   public get isProduction(): boolean {
+    if (process.env.MIDTRANS_IS_PRODUCTION !== undefined && process.env.MIDTRANS_IS_PRODUCTION !== "") {
+      return process.env.MIDTRANS_IS_PRODUCTION === "true";
+    }
     const sKey = this.serverKey;
     if (sKey.startsWith("SB-Mid-")) return false;
     if (sKey.startsWith("Mid-server-")) return true;
-    return process.env.MIDTRANS_IS_PRODUCTION === "true";
+    return false;
   }
 
   public get isConfigured(): boolean {

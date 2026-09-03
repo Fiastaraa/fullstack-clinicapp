@@ -14,7 +14,7 @@ export async function settleInvoice(
   method: PaymentMethod,
 ) {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(3, ${invoiceId}::int)`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(3, ${invoiceId}::int)`;
 
     const invoice = await tx.invoice.findUnique({
       where: { id: invoiceId },
