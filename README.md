@@ -23,14 +23,6 @@ npm run db:seed
 
 ## Menjalankan aplikasi
 
-Buka tiga terminal terpisah:
-
-~~~powershell
-START_SERVER.bat
-START_STAFF_WEB.bat
-START_MOBILE.bat
-~~~
-
 Web staff tersedia di http://localhost:5173, server di http://localhost:3001, dan Expo menampilkan QR code untuk aplikasi pasien.
 
 ## Menghubungkan HP ke server
