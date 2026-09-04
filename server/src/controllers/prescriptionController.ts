@@ -46,27 +46,30 @@ export async function createPrescription(
       where: {
         id: data.visitId,
       },
-      include: { doctor: { select: { userId: true } } },
+      include: {
+        doctor: { select: { userId: true } },
+        invoice: true,
+      },
     });
 
     if (!visit) {
       return res.status(404).json({
         success: false,
-        message: "Visit not found",
+        message: "Kunjungan pasien tidak ditemukan",
       });
     }
 
     if (visit.doctor.userId !== req.user?.userId) {
-      return res.status(404).json({
+      return res.status(403).json({
         success: false,
-        message: "Visit not found",
+        message: "Hanya dokter pemeriksa yang berwenang meresepkan obat untuk pasien ini",
       });
     }
 
-    if (!["WAITING", "CALLED", "IN_CONSULTATION"].includes(visit.status)) {
+    if (visit.status === "PAID" || visit.invoice?.status === "PAID") {
       return res.status(409).json({
         success: false,
-        message: "Prescription cannot be added to a completed visit",
+        message: "Resep tidak dapat ditambahkan karena tagihan kunjungan ini sudah lunas dibayar di kasir",
       });
     }
 
@@ -82,11 +85,41 @@ export async function createPrescription(
       },
     });
 
+    // If an invoice already exists and is unpaid, update medicineTotal and total
+    if (visit.invoice && visit.invoice.status === "UNPAID") {
+      const allRx = await prisma.prescription.findMany({
+        where: { visitId: data.visitId },
+        include: { medicine: true },
+      });
+      const medicineTotal = allRx.reduce(
+        (sum, item) => sum + Number(item.medicine.price) * item.quantity,
+        0,
+      );
+      const subtotal =
+        Number(visit.invoice.consultationFee) +
+        Number(visit.invoice.adminFee) +
+        medicineTotal;
+      const taxRate = Number(process.env.TAX_RATE ?? 0.18);
+      const tax = subtotal * taxRate;
+      const total = subtotal + tax;
+
+      await prisma.invoice.update({
+        where: { id: visit.invoice.id },
+        data: {
+          medicineTotal,
+          subtotal,
+          tax,
+          total,
+        },
+      });
+      broadcastClinicChange("invoices", visit.invoice.id);
+    }
+
     broadcastClinicChange("prescriptions", prescription.id);
 
     return res.status(201).json({
       success: true,
-      message: "Prescription created successfully",
+      message: "Resep obat berhasil diterbitkan",
       data: prescription,
     });
   } catch (error) {

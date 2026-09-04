@@ -743,12 +743,17 @@ export default function Prescriptions() {
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-bold focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">-- Pilih Pasien Konsultasi --</option>
-                  {visits.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.patient.name} (Antrean: {v.queueNumber || v.id} · Status: {v.status})
-                    </option>
-                  ))}
+                  {visits
+                    .filter((v) => v.status !== "PAID" && v.invoice?.status !== "PAID")
+                    .map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.patient.name} (Antrean: {v.queueNumber || v.id} · {v.status === "COMPLETED" ? "Selesai Konsultasi" : "Sedang Diperiksa"})
+                      </option>
+                    ))}
                 </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Resep utama dibuat di menu Konsultasi. Formulir ini untuk menambahkan obat tambahan sebelum pasien melunasi pembayaran di kasir.
+                </p>
               </div>
 
               <div>

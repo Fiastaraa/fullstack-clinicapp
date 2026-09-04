@@ -16,6 +16,7 @@ import {
 import PageHeader from "../../components/common/PageHeader";
 import Badge from "../../components/common/Badge";
 import { clinic, unwrap } from "../../services/clinicService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
 
 type Prescription = {
   id: number;
@@ -98,8 +99,8 @@ export default function Prescriptions() {
   // Print Modals
   const [printMode, setPrintMode] = useState<"etiket" | "salinan_resep" | null>(null);
 
-  async function loadVisits() {
-    setLoading(true);
+  async function loadVisits(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const res = await clinic.visits(dateFilter);
       const allVisits = unwrap<Visit[]>(res) || [];
@@ -123,13 +124,18 @@ export default function Prescriptions() {
         text: err?.response?.data?.message || "Gagal memuat daftar resep.",
       });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadVisits();
   }, [dateFilter]);
+
+  // Auto-refresh when doctor finishes consultation, prescription is created, or payment is completed
+  useRealtimeRefresh(["invoices", "visits", "prescriptions"], () => {
+    loadVisits(true);
+  });
 
   // Voice Announcement
   function announcePatient(queueNumber: string, patientName: string) {
@@ -390,9 +396,20 @@ export default function Prescriptions() {
                     <span className="font-mono font-black text-xs text-[#1B3C53] bg-[#1B3C53]/10 px-2 py-0.5 rounded-md">
                       {qNum}
                     </span>
-                    <Badge tone={allReady ? "emerald" : "amber"}>
-                      {allReady ? "SIAP" : `${pendingCount} Menunggu`}
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                          v.invoice?.status === "PAID"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {v.invoice?.status === "PAID" ? "LUNAS" : "BELUM LUNAS"}
+                      </span>
+                      <Badge tone={allReady ? "emerald" : "amber"}>
+                        {allReady ? "SIAP" : `${pendingCount} Menunggu`}
+                      </Badge>
+                    </div>
                   </div>
 
                   <h4 className="font-extrabold text-[#1B3C53] text-sm">
@@ -553,6 +570,52 @@ export default function Prescriptions() {
                       ? "SELURUH OBAT SIAP"
                       : "DALAM PROSES PENYIAPAN"}
                   </Badge>
+                </div>
+
+                {/* PAYMENT STATUS BANNER (Alur Kasir -> Apotek) */}
+                <div
+                  className={`flex items-center justify-between rounded-xl border p-3.5 text-xs font-semibold ${
+                    selectedVisit.invoice?.status === "PAID"
+                      ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
+                      : "border-amber-300 bg-amber-50 text-amber-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {selectedVisit.invoice?.status === "PAID" ? (
+                      <>
+                        <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                        <div>
+                          <p className="font-bold text-emerald-900">
+                            Status Pembayaran: SUDAH LUNAS (Kasir / Midtrans)
+                          </p>
+                          <p className="text-[11px] text-emerald-700">
+                            Pasien telah melunasi tagihan di loket kasir/admin. Obat dapat diserahkan ke pasien.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                        <div>
+                          <p className="font-bold text-amber-900">
+                            Status Pembayaran: MENUNGGU PEMBAYARAN KASIR
+                          </p>
+                          <p className="text-[11px] text-amber-700">
+                            Pasien belum melunasi tagihan sebesar Rp {Number(selectedVisit.invoice?.total || totalMedicinePrice).toLocaleString("id-ID")} di loket kasir. Pastikan pasien melunasi sebelum obat diserahkan.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                      selectedVisit.invoice?.status === "PAID"
+                        ? "bg-emerald-200/60 text-emerald-800"
+                        : "bg-amber-200/80 text-amber-900"
+                    }`}
+                  >
+                    {selectedVisit.invoice?.status === "PAID" ? "LUNAS" : "BELUM LUNAS"}
+                  </span>
                 </div>
 
                 <div className="overflow-x-auto">

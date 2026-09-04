@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import { createApp, getAllowedOrigins } from "./app.js";
 import { prisma } from "./lib/prisma.js";
 import { closeRealtime, initializeRealtime } from "./lib/realtime.js";
+import { ensureDummyData } from "./services/seedDummyData.js";
+import { generateDocxDocumentation } from "./services/createDocx.js";
 
 const port = Number(process.env.PORT) || 3001;
 const app = createApp();
@@ -12,6 +14,9 @@ initializeRealtime(httpServer, getAllowedOrigins());
 
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`AssistDoc API running on http://0.0.0.0:${port}`);
+  ensureDummyData()
+    .then(() => generateDocxDocumentation())
+    .catch(console.error);
 });
 
 async function shutdown(signal: string) {

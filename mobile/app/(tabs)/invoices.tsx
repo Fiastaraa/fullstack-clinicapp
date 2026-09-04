@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, StyleSheet, Text, View } from "react-native";
 import {
   Button,
   Card,
@@ -15,7 +15,11 @@ import {
 import { colors } from "../../src/constants/theme";
 import { useRealtimeRefresh } from "../../src/hooks/useRealtimeRefresh";
 import { clinicService } from "../../src/services/clinicService";
-import { startInvoicePayment } from "../../src/services/paymentService";
+import {
+  confirmInvoicePayment,
+  startInvoicePayment,
+  syncInvoicePaymentStatus
+} from "../../src/services/paymentService";
 import type { Visit } from "../../src/types";
 import { formatCurrency, formatDate, messageFromError } from "../../src/utils/format";
 
@@ -25,19 +29,39 @@ export default function InvoicesScreen() {
   const [payingId, setPayingId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (syncUnpaid = false) => {
     try {
       setError("");
       const response = await clinicService.visits("all");
-      setVisits(
-        response.data
-          .filter((visit) => Boolean(visit.invoice))
-          .sort(
-            (left, right) =>
-              new Date(right.visitDate).getTime() -
-              new Date(left.visitDate).getTime()
-          )
-      );
+      const currentVisits = response.data
+        .filter((visit) => Boolean(visit.invoice))
+        .sort(
+          (left, right) =>
+            new Date(right.visitDate).getTime() -
+            new Date(left.visitDate).getTime()
+        );
+
+      if (syncUnpaid) {
+        const unpaid = currentVisits.filter((v) => v.invoice?.status === "UNPAID");
+        if (unpaid.length > 0) {
+          await Promise.allSettled(
+            unpaid.map((uv) => syncInvoicePaymentStatus(uv.invoice!.id))
+          );
+          const refreshed = await clinicService.visits("all");
+          setVisits(
+            refreshed.data
+              .filter((visit) => Boolean(visit.invoice))
+              .sort(
+                (left, right) =>
+                  new Date(right.visitDate).getTime() -
+                  new Date(left.visitDate).getTime()
+              )
+          );
+          return;
+        }
+      }
+
+      setVisits(currentVisits);
     } catch (requestError) {
       setError(messageFromError(requestError, "Tagihan gagal dimuat."));
     } finally {
@@ -45,28 +69,57 @@ export default function InvoicesScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => void load(), [load]));
-  useRealtimeRefresh(["invoices", "visits"], load);
+  useFocusEffect(useCallback(() => void load(true), [load]));
+  useRealtimeRefresh(["invoices", "visits"], () => void load(false));
 
   async function pay(invoiceId: number) {
-    setPayingId(invoiceId);
-    setError("");
-    try {
-      const result = await startInvoicePayment(invoiceId);
-      if (result.mode === "mock") {
-        Alert.alert("Pembayaran berhasil", "Simulator menandai tagihan sebagai lunas.");
-      } else {
-        Alert.alert(
-          "Lanjutkan pembayaran",
-          "Selesaikan pembayaran pada halaman Midtrans, lalu kembali dan buka ulang tab ini."
-        );
-      }
-      await load();
-    } catch (requestError) {
-      setError(messageFromError(requestError, "Pembayaran gagal diproses."));
-    } finally {
-      setPayingId(null);
-    }
+    Alert.alert(
+      "Pembayaran Tagihan",
+      "Pilih metode penyelesaian pembayaran:",
+      [
+        {
+          text: "Bayar Lunas Sekarang",
+          onPress: async () => {
+            setPayingId(invoiceId);
+            setError("");
+            try {
+              await confirmInvoicePayment(invoiceId);
+              Alert.alert(
+                "Pembayaran Berhasil",
+                "Tagihan telah terverifikasi lunas! Resep obat Anda kini dapat segera diproses dan diserahkan oleh Farmasi."
+              );
+              await load(false);
+            } catch (confirmError) {
+              setError(messageFromError(confirmError, "Gagal memproses pembayaran."));
+            } finally {
+              setPayingId(null);
+            }
+          },
+        },
+        {
+          text: "Buka Gateway Midtrans",
+          onPress: async () => {
+            setPayingId(invoiceId);
+            setError("");
+            try {
+              const result = await startInvoicePayment(invoiceId);
+              if (result.mode === "mock") {
+                Alert.alert("Pembayaran Berhasil", "Tagihan Anda telah terverifikasi lunas!");
+                await load(false);
+              }
+            } catch (requestError) {
+              setError(messageFromError(requestError, "Pembayaran gagal diproses."));
+            } finally {
+              setPayingId(null);
+            }
+          },
+        },
+        {
+          text: "Batal",
+          style: "cancel",
+        },
+      ]
+    );
   }
 
   return (

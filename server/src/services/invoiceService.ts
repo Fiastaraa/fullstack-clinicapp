@@ -11,10 +11,7 @@ export async function ensureInvoiceForVisit(visitId: number) {
 
   if (!visit) throw new Error("Visit not found");
   if (visit.invoice) return visit.invoice;
-  if (!(["COMPLETED", "PAID"] as string[]).includes(visit.status)) return null;
-  if (visit.prescriptions.some((item) => item.status === "PENDING")) {
-    return null;
-  }
+  if (!["COMPLETED", "PAID"].includes(visit.status)) return null;
 
   const consultationFee = Number(process.env.CONSULTATION_FEE ?? 30000);
   const adminFee = Number(process.env.ADMIN_FEE ?? 5000);

@@ -1017,15 +1017,6 @@ export default function Vitals() {
                 <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-200">
                   <button
                     type="button"
-                    onClick={() => handleSaveVitals(false)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-sm disabled:opacity-50"
-                  >
-                    <Save size={16} /> {saving ? "Menyimpan..." : "Simpan Draf Pemeriksaan"}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => handleSaveVitals(true)}
                     disabled={saving}
                     className="inline-flex items-center gap-2 rounded-xl bg-[#168c9b] px-6 py-3 text-xs font-bold text-white shadow-lg hover:bg-[#12727f] transition disabled:opacity-50"

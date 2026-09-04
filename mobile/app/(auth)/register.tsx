@@ -33,6 +33,34 @@ export default function RegisterScreen() {
   }
 
   async function submit() {
+    if (!form.name.trim() || form.name.trim().length < 2) {
+      setError("Nama lengkap minimal 2 karakter.");
+      return;
+    }
+    if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError("Format email tidak valid.");
+      return;
+    }
+    if (form.nik && form.nik.trim().length !== 16) {
+      setError("NIK harus tepat 16 digit angka (atau kosongkan jika opsional).");
+      return;
+    }
+    if (!form.birthDate.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate.trim())) {
+      setError("Format tanggal lahir harus YYYY-MM-DD (contoh: 2000-10-16).");
+      return;
+    }
+    if (!form.phone.trim() || !/^\+?[0-9]{8,15}$/.test(form.phone.trim())) {
+      setError("Nomor HP harus terdiri dari 8 hingga 15 digit angka.");
+      return;
+    }
+    if (!form.address.trim() || form.address.trim().length < 5) {
+      setError("Alamat minimal 5 karakter.");
+      return;
+    }
+    if (form.password.length < 8) {
+      setError("Password minimal 8 karakter.");
+      return;
+    }
     if (form.password !== confirmPassword) {
       setError("Konfirmasi password tidak sama.");
       return;

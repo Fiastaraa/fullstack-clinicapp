@@ -16,11 +16,12 @@ export function useRealtimeRefresh(
 
   useEffect(() => {
     if (!change || !change.changedAt) return;
-    if (lastProcessedRef.current === change.changedAt) return;
+    const changeKey = `${change.resource}:${change.id ?? ""}:${change.changedAt}:${change.seq ?? ""}`;
+    if (lastProcessedRef.current === changeKey) return;
 
     const resourceList = resourcesKey.split(",") as ClinicResource[];
     if (resourceList.includes(change.resource)) {
-      lastProcessedRef.current = change.changedAt;
+      lastProcessedRef.current = changeKey;
       void callbackRef.current();
     }
   }, [change, resourcesKey]);

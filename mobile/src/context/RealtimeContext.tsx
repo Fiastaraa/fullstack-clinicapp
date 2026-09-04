@@ -31,8 +31,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       transports: ["websocket", "polling"]
     });
     socket.on("clinic:data-changed", setChange);
+    socket.on("connect_error", (err) => {
+      console.warn("Realtime socket warning:", err?.message || err);
+    });
     return () => {
       socket.off("clinic:data-changed", setChange);
+      socket.off("connect_error");
       socket.disconnect();
     };
   }, [token]);

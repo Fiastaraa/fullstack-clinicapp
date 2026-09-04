@@ -21,6 +21,7 @@ export type ClinicChange = {
   resource: ClinicResource;
   id?: number;
   changedAt: string;
+  seq?: number;
 };
 
 const RealtimeContext = createContext<{ change: ClinicChange | null }>({
@@ -41,6 +42,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) return;
 
+    let seq = 0;
     const socketUrl = getSocketUrl();
     const socket = io(socketUrl, {
       auth: { token },
@@ -48,7 +50,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
 
     socket.on("clinic:data-changed", (data: ClinicChange) => {
-      setChange(data);
+      setChange({ ...data, seq: ++seq });
     });
 
     return () => {

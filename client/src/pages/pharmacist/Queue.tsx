@@ -22,6 +22,7 @@ import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/dashboard/StatCard";
 import Badge from "../../components/common/Badge";
 import { clinic, unwrap } from "../../services/clinicService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
 
 type Prescription = {
   id: number;
@@ -90,8 +91,8 @@ export default function Queue() {
   const [selectedVisitForPrint, setSelectedVisitForPrint] = useState<Visit | null>(null);
   const [selectedVisitForDetail, setSelectedVisitForDetail] = useState<Visit | null>(null);
 
-  async function loadData() {
-    setLoading(true);
+  async function loadData(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const res = await clinic.visits("all");
       const data = unwrap<Visit[]>(res);
@@ -106,13 +107,17 @@ export default function Queue() {
         text: err?.response?.data?.message || "Gagal memuat antrean resep farmasi.",
       });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useRealtimeRefresh(["invoices", "visits", "prescriptions"], () => {
+    loadData(true);
+  });
 
   // Voice Announcement
   function announcePatient(queueNumber: string, patientName: string) {
@@ -485,6 +490,15 @@ export default function Queue() {
 
                 {/* Right Header Status & Main Action */}
                 <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                      visit.invoice?.status === "PAID"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {visit.invoice?.status === "PAID" ? "LUNAS (KASIR)" : "BELUM LUNAS"}
+                  </span>
                   <Badge tone={allReady ? "emerald" : "amber"}>
                     {allReady ? "SELESAI / SIAP" : `${pendingCountInVisit} BELUM READY`}
                   </Badge>

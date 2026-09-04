@@ -25,9 +25,10 @@ export async function apiRequest<T>(
   if (options.body) headers.set("Content-Type", "application/json");
   if (accessToken) headers.set("Authorization", "Bearer " + accessToken);
 
+  const url = `${API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
   let response: Response;
   try {
-    response = await fetch(API_URL + path, { ...options, headers });
+    response = await fetch(url, { ...options, headers });
   } catch {
     throw new ApiError(
       "Tidak dapat terhubung ke server. Periksa alamat IP server dan Wi-Fi.",
