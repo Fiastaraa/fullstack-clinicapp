@@ -26,9 +26,27 @@ export function initializeRealtime(
 
   realtime = new Server(server, {
     cors: {
-      origin: allowedOrigins.length === 0 ? true : allowedOrigins,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (native mobile apps, curl) or matching origins
+        if (
+          !origin ||
+          allowedOrigins.length === 0 ||
+          allowedOrigins.includes(origin) ||
+          origin.includes("192.168.") ||
+          origin.includes("10.") ||
+          origin.includes("localhost") ||
+          origin.includes("127.0.0.1") ||
+          origin.startsWith("exp://")
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, true);
+      },
       methods: ["GET", "POST"],
+      credentials: true,
     },
+    transports: ["polling", "websocket"],
+    allowEIO3: true,
   });
 
   realtime.use((socket, next) => {

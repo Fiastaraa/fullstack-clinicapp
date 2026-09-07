@@ -4,7 +4,7 @@ type VisitScope = "today" | "history" | "all";
 type VisitStatus = "WAITING" | "CALLED" | "IN_CONSULTATION" | "COMPLETED" | "PAID";
 type PrescriptionStatus = "PENDING" | "READY";
 type PaymentMethod = "CASH" | "TRANSFER" | "E_WALLET";
-type ReminderStatus = "PENDING" | "SENT" | "COMPLETED";
+type ReminderStatus = "PENDING" | "SENT" | "COMPLETED" | "HANGUS";
 
 export const clinic = {
   patients: async (q = "") =>
@@ -47,6 +47,8 @@ export const clinic = {
   createPoli: async (data: unknown) => (await api.post("/polis", data)).data,
   reminders: async () => (await api.get("/reminders")).data,
   createReminder: async (data: unknown) => (await api.post("/reminders", data)).data,
+  rescheduleReminder: async (id: number, date: string, notes?: string) =>
+    (await api.patch(`/reminders/${id}/reschedule`, { date, notes })).data,
   updateReminderStatus: async (id: number, status: ReminderStatus) =>
     (await api.patch(`/reminders/${id}`, { status })).data,
 };

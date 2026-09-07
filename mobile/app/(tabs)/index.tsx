@@ -126,8 +126,8 @@ export default function HomeScreen() {
           <Text style={uiStyles.sectionTitle}>Akses cepat</Text>
           <View style={styles.quickGrid}>
             <QuickLink href="/registration" icon="add-circle-outline" label="Daftar Poli" />
-            <QuickLink href="/history" icon="folder-open-outline" label="Rekam Medis" />
-            <QuickLink href="/invoices" icon="card-outline" label="Tagihan" />
+            <QuickLink href="/(tabs)/history" icon="folder-open-outline" label="Rekam Medis" />
+            <QuickLink href="/(tabs)/invoices" icon="card-outline" label="Tagihan" />
             <QuickLink href="/profile" icon="person-outline" label="Profil" />
           </View>
 

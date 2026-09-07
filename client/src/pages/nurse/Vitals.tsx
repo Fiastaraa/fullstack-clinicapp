@@ -19,7 +19,6 @@ import {
   Volume2,
   ArrowRight,
   ShieldAlert,
-  Save,
   Smile,
   Meh,
   Frown,

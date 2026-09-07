@@ -28,11 +28,18 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     const socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ["websocket", "polling"]
+      transports: ["polling", "websocket"],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      timeout: 10000
     });
     socket.on("clinic:data-changed", setChange);
     socket.on("connect_error", (err) => {
-      console.warn("Realtime socket warning:", err?.message || err);
+      // In React Native Expo, transient transport upgrades or reconnects can occur
+      if (__DEV__) {
+        console.log("Realtime socket info:", err?.message || err);
+      }
     });
     return () => {
       socket.off("clinic:data-changed", setChange);

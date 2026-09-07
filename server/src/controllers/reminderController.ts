@@ -5,9 +5,14 @@ import { prisma } from "../lib/prisma.js";
 import { broadcastClinicChange } from "../lib/realtime.js";
 
 const createReminderSchema = z.object({
-  patientId: z.coerce.number().int().positive().optional(),
-  type: z.enum(["KONTROL", "VAKSINASI", "CEK_LAB"]),
+  patientId: z.coerce.number().int().positive(),
+  type: z.enum(["KONTROL", "VAKSINASI", "CEK_LAB"]).default("KONTROL"),
   title: z.string().trim().min(2).max(150),
+  date: z.coerce.date(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+const rescheduleReminderSchema = z.object({
   date: z.coerce.date(),
   notes: z.string().trim().max(1000).optional(),
 });
@@ -41,7 +46,27 @@ export async function getReminders(
       orderBy: { date: "asc" },
       include: { patient: true },
     });
-    return res.json({ success: true, data: reminders });
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const withComputedStatus = reminders.map((r) => {
+      const isPast = new Date(r.date).getTime() < todayStart.getTime();
+      const effectiveStatus =
+        r.status === "COMPLETED"
+          ? "COMPLETED"
+          : isPast
+          ? "HANGUS"
+          : r.status;
+
+      return {
+        ...r,
+        effectiveStatus,
+        isHangus: effectiveStatus === "HANGUS",
+      };
+    });
+
+    return res.json({ success: true, data: withComputedStatus });
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -56,22 +81,20 @@ export async function createReminder(
   res: Response,
 ) {
   try {
-    const data = createReminderSchema.parse(req.body);
-    let patientId = data.patientId;
-
-    if (req.user?.role === "PATIENT") {
-      patientId = await ownPatientId(req.user.userId);
-    }
-    if (!patientId) {
-      return res.status(400).json({
+    // Only doctors are authorized to create control schedules
+    if (req.user?.role !== "DOCTOR") {
+      return res.status(403).json({
         success: false,
-        message: "patientId is required",
+        message: "Hanya dokter yang berwenang menentukan dan membuat jadwal kontrol pasien.",
       });
     }
 
+    const data = createReminderSchema.parse(req.body);
+    const patientId = data.patientId;
+
     const patient = await prisma.patient.findUnique({ where: { id: patientId } });
     if (!patient) {
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res.status(404).json({ success: false, message: "Pasien tidak ditemukan" });
     }
 
     const reminder = await prisma.reminder.create({
@@ -85,11 +108,17 @@ export async function createReminder(
       },
       include: { patient: true },
     });
+
     broadcastClinicChange("reminders", reminder.id);
+
     return res.status(201).json({
       success: true,
-      message: "Reminder created",
-      data: reminder,
+      message: "Jadwal kontrol berhasil dibuat oleh dokter",
+      data: {
+        ...reminder,
+        effectiveStatus: "PENDING",
+        isHangus: false,
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -102,7 +131,78 @@ export async function createReminder(
     console.error(error);
     return res.status(500).json({
       success: false,
-      message: "Failed to create reminder",
+      message: "Gagal membuat jadwal kontrol pasien",
+    });
+  }
+}
+
+export async function rescheduleReminder(
+  req: AuthenticatedRequest,
+  res: Response,
+) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid reminder id" });
+    }
+
+    // Admin & Doctor can reschedule
+    if (!["ADMIN", "DOCTOR"].includes(req.user?.role || "")) {
+      return res.status(403).json({
+        success: false,
+        message: "Hanya Admin dan Dokter yang berwenang melakukan reschedule jadwal kontrol pasien",
+      });
+    }
+
+    const data = rescheduleReminderSchema.parse(req.body);
+    const reminder = await prisma.reminder.findUnique({
+      where: { id },
+      include: { patient: true },
+    });
+
+    if (!reminder) {
+      return res.status(404).json({ success: false, message: "Jadwal kontrol tidak ditemukan" });
+    }
+
+    const newDateStr = new Date(data.date).toLocaleDateString("id-ID", { dateStyle: "long" });
+    const rescheduleLog = `[RESCHEDULE by ${req.user?.role || "ADMIN"}: ${newDateStr}] ${data.notes || "Pasien berhalangan hadir"}`;
+    const updatedNotes = reminder.notes
+      ? `${reminder.notes}\n${rescheduleLog}`
+      : rescheduleLog;
+
+    const updated = await prisma.reminder.update({
+      where: { id },
+      data: {
+        date: data.date,
+        notes: updatedNotes,
+        status: "PENDING", // Reset to PENDING for the newly scheduled date
+      },
+      include: { patient: true },
+    });
+
+    broadcastClinicChange("reminders", id);
+
+    return res.json({
+      success: true,
+      message: `Jadwal kontrol berhasil di-reschedule ke ${newDateStr}`,
+      data: {
+        ...updated,
+        effectiveStatus: "PENDING",
+        isHangus: false,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: error.issues,
+      });
+    }
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal melakukan reschedule jadwal kontrol",
     });
   }
 }
@@ -135,12 +235,26 @@ export async function updateReminderStatus(
     const updated = await prisma.reminder.update({
       where: { id },
       data: { status },
+      include: { patient: true },
     });
     broadcastClinicChange("reminders", id);
+
+    const isPast = new Date(updated.date).getTime() < new Date().setHours(0, 0, 0, 0);
+    const effectiveStatus =
+      updated.status === "COMPLETED"
+        ? "COMPLETED"
+        : isPast
+        ? "HANGUS"
+        : updated.status;
+
     return res.json({
       success: true,
       message: "Reminder status updated",
-      data: updated,
+      data: {
+        ...updated,
+        effectiveStatus,
+        isHangus: effectiveStatus === "HANGUS",
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

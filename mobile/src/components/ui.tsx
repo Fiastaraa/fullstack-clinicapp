@@ -136,7 +136,8 @@ const statusMap: Record<string, { background: string; color: string; label: stri
   UNPAID: { background: colors.warningSoft, color: colors.warning, label: "Belum Bayar" },
   PENDING: { background: colors.warningSoft, color: colors.warning, label: "Menunggu" },
   SENT: { background: colors.infoSoft, color: colors.tealDark, label: "Terkirim" },
-  READY: { background: colors.successSoft, color: colors.success, label: "Siap" }
+  READY: { background: colors.successSoft, color: colors.success, label: "Siap" },
+  HANGUS: { background: colors.dangerSoft, color: colors.danger, label: "Hangus" }
 };
 
 export function StatusPill({ status }: { status: string }) {

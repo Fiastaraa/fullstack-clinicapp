@@ -106,7 +106,9 @@ export type Reminder = {
   title: string;
   date: string;
   notes?: string | null;
-  status: "PENDING" | "SENT" | "COMPLETED";
+  status: "PENDING" | "SENT" | "COMPLETED" | "HANGUS";
+  effectiveStatus?: "PENDING" | "SENT" | "COMPLETED" | "HANGUS";
+  isHangus?: boolean;
 };
 
 export type ApiResponse<T> = {

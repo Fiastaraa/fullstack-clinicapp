@@ -258,7 +258,7 @@ export default function Prescriptions() {
         action={
           <div className="flex items-center gap-2">
             <button
-              onClick={loadVisits}
+              onClick={() => loadVisits()}
               disabled={loading}
               className="ad-btn border border-[#dfe3ea] bg-white text-slate-700 hover:bg-slate-50 shadow-xs"
             >

@@ -25,7 +25,7 @@ export default function TabsLayout() {
           backgroundColor: colors.white
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: "800" },
-        tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+        tabBarIcon: ({ color, size }: { color: any; size: number }) => (
           <Ionicons name={icons[route.name]} color={color} size={size} />
         )
       })}

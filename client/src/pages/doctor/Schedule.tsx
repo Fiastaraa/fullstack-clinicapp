@@ -47,6 +47,8 @@ type Visit = {
   } | null;
 };
 
+import CalendarPicker from "../../components/common/CalendarPicker";
+
 type Reminder = {
   id: number;
   patientId: number;
@@ -54,7 +56,9 @@ type Reminder = {
   title: string;
   date: string;
   notes?: string | null;
-  status: "PENDING" | "SENT" | "COMPLETED";
+  status: "PENDING" | "SENT" | "COMPLETED" | "HANGUS";
+  effectiveStatus?: string;
+  isHangus?: boolean;
   patient?: {
     id: number;
     name: string;
@@ -693,12 +697,15 @@ export default function DoctorSchedule() {
               </div>
             ) : (
               reminders.map((rem) => {
-                const isCompleted = rem.status === "COMPLETED";
+                const isCompleted = rem.status === "COMPLETED" || rem.effectiveStatus === "COMPLETED";
+                const isHangus = rem.isHangus || rem.effectiveStatus === "HANGUS";
 
                 return (
                   <div
                     key={rem.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between"
+                    className={`rounded-2xl border bg-white p-5 shadow-xs flex flex-col justify-between ${
+                      isHangus ? "border-rose-200 bg-rose-50/20" : "border-slate-200"
+                    }`}
                   >
                     <div>
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -706,11 +713,15 @@ export default function DoctorSchedule() {
                           {rem.type}
                         </span>
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            isCompleted ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                            isCompleted
+                              ? "bg-emerald-100 text-emerald-800"
+                              : isHangus
+                              ? "bg-rose-100 text-rose-800 border border-rose-200"
+                              : "bg-amber-100 text-amber-800"
                           }`}
                         >
-                          {rem.status}
+                          {isCompleted ? "SELESAI (HADIR)" : isHangus ? "HANGUS (TIDAK HADIR)" : rem.status}
                         </span>
                       </div>
 
@@ -759,7 +770,7 @@ export default function DoctorSchedule() {
       {/* MODAL: TAMBAH JADWAL KONTROL PASIEN */}
       {showAddReminderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <h3 className="text-base font-bold text-[#101a3d] border-b border-slate-100 pb-3">
               Jadwalkan Kontrol Ulang Pasien
             </h3>
@@ -782,30 +793,27 @@ export default function DoctorSchedule() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Tipe Jadwal</label>
-                  <select
-                    value={reminderType}
-                    onChange={(e) => setReminderType(e.target.value as any)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-bold focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="KONTROL">Kontrol Ulang Dokter</option>
-                    <option value="VAKSINASI">Vaksinasi Berkala</option>
-                    <option value="CEK_LAB">Cek Laboratorium</option>
-                  </select>
-                </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Tipe Jadwal</label>
+                <select
+                  value={reminderType}
+                  onChange={(e) => setReminderType(e.target.value as any)}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-bold focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="KONTROL">Kontrol Ulang Dokter</option>
+                  <option value="VAKSINASI">Vaksinasi Berkala</option>
+                  <option value="CEK_LAB">Cek Laboratorium</option>
+                </select>
+              </div>
 
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Tanggal Rencana *</label>
-                  <input
-                    type="date"
-                    required
-                    value={reminderDate}
-                    onChange={(e) => setReminderDate(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-bold focus:border-indigo-500 focus:outline-none"
-                  />
-                </div>
+              {/* INTERACTIVE VISUAL CALENDAR PICKER */}
+              <div>
+                <CalendarPicker
+                  label="Pilih Tanggal Rencana Kontrol *"
+                  value={reminderDate}
+                  minDate={new Date().toISOString().split("T")[0]}
+                  onChange={(d) => setReminderDate(d)}
+                />
               </div>
 
               <div>

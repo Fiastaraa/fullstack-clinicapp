@@ -13,7 +13,9 @@ import {
   Search,
   ArrowRight,
   Sparkles,
+  Calendar,
 } from "lucide-react";
+import CalendarPicker from "../../components/common/CalendarPicker";
 
 type Patient = {
   id: number;
@@ -116,6 +118,15 @@ export default function Consultation() {
   const [medQuantity, setMedQuantity] = useState<string>("10");
   const [medInstructions, setMedInstructions] = useState<string>("3 x 1 tablet sesudah makan");
 
+  // Plan - Follow-up Schedule (Doctor-only creation)
+  const [scheduleFollowUp, setScheduleFollowUp] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [followUpNotes, setFollowUpNotes] = useState("Kontrol evaluasi pengobatan dan respon klinis");
+
   // Loading & Feedback
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
@@ -217,8 +228,63 @@ export default function Consultation() {
   function selectPatient(v: Visit) {
     setSelected(v);
     setParams({ visitId: String(v.id) });
-    setAnamnesis(v.complaint ? `Keluhan utama: ${v.complaint}. Pasien mengeluhkan gejala sejak 2 hari terakhir.` : "");
     setMsg(null);
+
+    // If visit already has diagnoses recorded, load them
+    if (v.diagnoses && v.diagnoses.length > 0) {
+      const firstDiag = v.diagnoses[0];
+      if (firstDiag.diagnosisName.includes(" (Sekunder: ")) {
+        const [p, s] = firstDiag.diagnosisName.split(" (Sekunder: ");
+        setPrimaryDiagnosis(p);
+        setSecondaryDiagnosis(s.replace(/\)$/, ""));
+      } else {
+        setPrimaryDiagnosis(firstDiag.diagnosisName);
+        setSecondaryDiagnosis("");
+      }
+
+      if (firstDiag.notes) {
+        const rawNotes = firstDiag.notes;
+        const anamMatch = rawNotes.match(/\[ANAMNESIS\]\s*([\s\S]*?)(?=\n\[|$)/i);
+        const physMatch = rawNotes.match(/\[PEMERIKSAAN FISIK\]\s*([\s\S]*?)(?=\n\[|$)/i);
+        const eduMatch = rawNotes.match(/\[EDUKASI \/ CATATAN\]\s*([\s\S]*?)(?=\n\[|$)/i);
+        const allergyMatch = rawNotes.match(/\[ALERGI\]\s*([\s\S]*?)(?=\n\[|$)/i);
+
+        if (anamMatch && anamMatch[1].trim() !== "-") setAnamnesis(anamMatch[1].trim());
+        else setAnamnesis(v.complaint ? `Keluhan utama: ${v.complaint}. Pasien mengeluhkan gejala sejak 2 hari terakhir.` : "");
+
+        if (physMatch && physMatch[1].trim() !== "-") setPhysicalExam(physMatch[1].trim());
+        if (eduMatch && eduMatch[1].trim() !== "-") setClinicalNotes(eduMatch[1].trim());
+        if (allergyMatch && allergyMatch[1].trim() !== "-") setAllergies(allergyMatch[1].trim());
+      } else {
+        setAnamnesis(v.complaint ? `Keluhan utama: ${v.complaint}. Pasien mengeluhkan gejala sejak 2 hari terakhir.` : "");
+        setClinicalNotes("Pasien disarankan istirahat cukup dan banyak minum air hangat.");
+      }
+    } else {
+      setPrimaryDiagnosis("ISPA (Infeksi Saluran Pernapasan Akut)");
+      setSecondaryDiagnosis("");
+      setAnamnesis(v.complaint ? `Keluhan utama: ${v.complaint}. Pasien mengeluhkan gejala sejak 2 hari terakhir.` : "");
+      setClinicalNotes("Pasien disarankan istirahat cukup dan banyak minum air hangat.");
+      setPhysicalExam("Keadaan umum baik, kesadaran compos mentis, thorax & abdomen dalam batas normal.");
+      setAllergies("Tidak ada alergi obat yang dilaporkan");
+    }
+
+    // Populate prescriptions if available
+    if (v.prescriptions && v.prescriptions.length > 0) {
+      setPrescriptionItems(
+        v.prescriptions.map((p) => ({
+          medicineId: p.medicine?.id || p.id,
+          name: p.medicine?.name || "Obat",
+          dosage: p.medicine?.dosage || "-",
+          price: Number(p.medicine?.price || 0),
+          quantity: p.quantity,
+          instructions: "Sesuai resep dokter / petunjuk farmasi",
+        }))
+      );
+    } else {
+      setPrescriptionItems([]);
+    }
+
+    setScheduleFollowUp(false);
   }
 
   // Quick Start Consultation if patient was still waiting/called
@@ -292,6 +358,13 @@ export default function Consultation() {
   // Complete consultation workflow
   async function handleFinishConsultation() {
     if (!selected) return;
+    if (selected.status === "COMPLETED" || selected.status === "PAID") {
+      setMsg({
+        type: "info",
+        text: "Kunjungan ini telah selesai diperiksa sebelumnya. Rekam medis sudah tersimpan.",
+      });
+      return;
+    }
     if (!primaryDiagnosis.trim()) {
       setMsg({ type: "error", text: "Diagnosis utama dokter wajib diisi." });
       return;
@@ -334,9 +407,24 @@ export default function Consultation() {
       // there is no prescription, or after Pharmacy marks every item READY.
       await clinic.status(selected.id, "COMPLETED");
 
+      // 4. Create follow-up appointment reminder if scheduled by doctor
+      let followUpSuccessMsg = "";
+      if (scheduleFollowUp && followUpDate) {
+        try {
+          await clinic.createReminder({
+            patientId: selected.patient.id,
+            date: followUpDate,
+            notes: followUpNotes.trim() || "Kontrol evaluasi lanjutan dengan dokter",
+          });
+          followUpSuccessMsg = ` Jadwal kontrol pasien berhasil ditetapkan pada ${followUpDate}.`;
+        } catch (fErr: any) {
+          console.warn("Gagal membuat jadwal kontrol:", fErr);
+        }
+      }
+
       setMsg({
         type: "success",
-        text: `Konsultasi pasien ${selected.patient.name} selesai! Resep dikirim ke Farmasi dan tagihan diproses otomatis.`,
+        text: `Konsultasi pasien ${selected.patient.name} selesai! Resep dikirim ke Farmasi dan tagihan diproses otomatis.${followUpSuccessMsg}`,
       });
 
       // Update local state
@@ -376,6 +464,8 @@ export default function Consultation() {
   const totalPrescriptionPrice = useMemo(() => {
     return prescriptionItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   }, [prescriptionItems]);
+
+  const isCompleted = selected?.status === "COMPLETED" || selected?.status === "PAID";
 
   return (
     <>
@@ -556,7 +646,7 @@ export default function Consultation() {
                           className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                             selected.status === "IN_CONSULTATION"
                               ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                              : selected.status === "COMPLETED"
+                              : isCompleted
                               ? "bg-blue-500/20 text-blue-300 border border-blue-500/40"
                               : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
                           }`}
@@ -572,7 +662,7 @@ export default function Consultation() {
                   </div>
 
                   {/* Status Action */}
-                  {selected.status !== "IN_CONSULTATION" && selected.status !== "COMPLETED" && (
+                  {selected.status !== "IN_CONSULTATION" && !isCompleted && (
                     <button
                       onClick={handleStartConsultation}
                       className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-xs font-bold text-white shadow transition"
@@ -619,6 +709,46 @@ export default function Consultation() {
                 )}
               </div>
 
+              {/* COMPLETED STATUS NOTIFICATION BANNER */}
+              {isCompleted && (
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-emerald-950 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shrink-0 shadow-xs">
+                      <CheckCircle2 size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-black text-sm text-emerald-950">
+                          Pemeriksaan Selesai (Rekam Medis Terkunci)
+                        </p>
+                        <span className="rounded-full bg-emerald-200/80 px-2 py-0.5 text-[10px] font-black text-emerald-900">
+                          {selected.status === "PAID" ? "LUNAS DI KASIR" : "SELESAI KONSULTASI"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-emerald-800 mt-0.5">
+                        Kunjungan ini telah selesai diperiksa oleh dokter. Rekam medis, diagnosis ICD-10, dan resep obat di bawah ini telah tercatat dan dikirim ke Farmasi & Kasir.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextReady = visits.find(
+                        (v) => v.id !== selected.id && (v.status === "IN_CONSULTATION" || v.status === "CALLED" || v.status === "WAITING")
+                      );
+                      if (nextReady) {
+                        selectPatient(nextReady);
+                      } else {
+                        setQueueTab("READY");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 text-xs font-bold shadow-xs transition shrink-0"
+                  >
+                    Periksa Pasien Aktif Lain <ArrowRight size={13} />
+                  </button>
+                </div>
+              )}
+
               {/* 2. SOAP CONSULTATION WORKSPACE */}
               <div className="space-y-6">
                 {/* S - SUBJECTIVE */}
@@ -638,9 +768,14 @@ export default function Consultation() {
                       <textarea
                         rows={3}
                         value={anamnesis}
+                        readOnly={isCompleted}
                         onChange={(e) => setAnamnesis(e.target.value)}
                         placeholder="Uraikan keluhan utama, durasi gejala, faktor pemberat/peringan..."
-                        className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                        className={`w-full rounded-xl border p-3 text-xs focus:outline-none resize-none ${
+                          isCompleted
+                            ? "border-slate-200 bg-slate-100/70 text-slate-700 cursor-not-allowed"
+                            : "border-slate-200 bg-white focus:border-indigo-500"
+                        }`}
                       />
                     </div>
 
@@ -651,9 +786,14 @@ export default function Consultation() {
                       <textarea
                         rows={3}
                         value={allergies}
+                        readOnly={isCompleted}
                         onChange={(e) => setAllergies(e.target.value)}
                         placeholder="Contoh: Alergi Amoksisilin, Asam Mefenamat..."
-                        className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                        className={`w-full rounded-xl border p-3 text-xs focus:outline-none resize-none ${
+                          isCompleted
+                            ? "border-slate-200 bg-slate-100/70 text-slate-700 cursor-not-allowed"
+                            : "border-slate-200 bg-white focus:border-indigo-500"
+                        }`}
                       />
                     </div>
                   </div>
@@ -670,9 +810,14 @@ export default function Consultation() {
                     <textarea
                       rows={2}
                       value={physicalExam}
+                      readOnly={isCompleted}
                       onChange={(e) => setPhysicalExam(e.target.value)}
                       placeholder="Status lokalis, pemeriksaan kepala/leher, thoraks (cor/pulmo), abdomen, ekstremitas..."
-                      className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                      className={`w-full rounded-xl border p-3 text-xs focus:outline-none resize-none ${
+                        isCompleted
+                          ? "border-slate-200 bg-slate-100/70 text-slate-700 cursor-not-allowed"
+                          : "border-slate-200 bg-white focus:border-indigo-500"
+                      }`}
                     />
                   </div>
                 </div>
@@ -687,27 +832,29 @@ export default function Consultation() {
                   </div>
 
                   {/* Quick Preset Diagnoses Buttons */}
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 block mb-1.5">
-                      Pilihan Diagnosis Cepat:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {COMMON_DIAGNOSES.map((diag, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setPrimaryDiagnosis(`${diag.name} (${diag.icd})`)}
-                          className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition border ${
-                            primaryDiagnosis.includes(diag.name)
-                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {diag.name}
-                        </button>
-                      ))}
+                  {!isCompleted && (
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-500 block mb-1.5">
+                        Pilihan Diagnosis Cepat:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {COMMON_DIAGNOSES.map((diag, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setPrimaryDiagnosis(`${diag.name} (${diag.icd})`)}
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition border ${
+                              primaryDiagnosis.includes(diag.name)
+                                ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            {diag.name}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
@@ -716,9 +863,14 @@ export default function Consultation() {
                       </label>
                       <input
                         value={primaryDiagnosis}
+                        readOnly={isCompleted}
                         onChange={(e) => setPrimaryDiagnosis(e.target.value)}
                         placeholder="Contoh: ISPA / Faringitis Akut (J02.9)"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-[#101a3d] focus:border-indigo-500 focus:outline-none"
+                        className={`w-full rounded-xl border px-3 py-2.5 text-xs font-bold focus:outline-none ${
+                          isCompleted
+                            ? "border-slate-200 bg-slate-100/70 text-[#101a3d] cursor-not-allowed"
+                            : "border-slate-200 bg-white text-[#101a3d] focus:border-indigo-500"
+                        }`}
                       />
                     </div>
 
@@ -728,9 +880,14 @@ export default function Consultation() {
                       </label>
                       <input
                         value={secondaryDiagnosis}
+                        readOnly={isCompleted}
                         onChange={(e) => setSecondaryDiagnosis(e.target.value)}
                         placeholder="Contoh: Dispepsia Fungsional (K30)"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold focus:border-indigo-500 focus:outline-none"
+                        className={`w-full rounded-xl border px-3 py-2.5 text-xs font-semibold focus:outline-none ${
+                          isCompleted
+                            ? "border-slate-200 bg-slate-100/70 text-slate-700 cursor-not-allowed"
+                            : "border-slate-200 bg-white focus:border-indigo-500"
+                        }`}
                       />
                     </div>
                   </div>
@@ -749,60 +906,62 @@ export default function Consultation() {
                   </div>
 
                   {/* Prescription Item Selector & Adder */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-                    <span className="text-xs font-bold text-slate-700 block">Tambah Obat ke Lembar Resep:</span>
-                    <div className="grid gap-3 sm:grid-cols-12 items-end">
-                      {/* Medicine select */}
-                      <div className="sm:col-span-5">
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Pilih Obat dari Apotek</label>
-                        <select
-                          value={selectedMedId}
-                          onChange={(e) => setSelectedMedId(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-[#101a3d] focus:border-indigo-500 focus:outline-none"
-                        >
-                          {medicines.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name} ({m.dosage}) · Stok: {m.stock} · Rp {Number(m.price).toLocaleString("id-ID")}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                  {!isCompleted && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                      <span className="text-xs font-bold text-slate-700 block">Tambah Obat ke Lembar Resep:</span>
+                      <div className="grid gap-3 sm:grid-cols-12 items-end">
+                        {/* Medicine select */}
+                        <div className="sm:col-span-5">
+                          <label className="text-[11px] font-bold text-slate-500 block mb-1">Pilih Obat dari Apotek</label>
+                          <select
+                            value={selectedMedId}
+                            onChange={(e) => setSelectedMedId(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-[#101a3d] focus:border-indigo-500 focus:outline-none"
+                          >
+                            {medicines.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.dosage}) · Stok: {m.stock} · Rp {Number(m.price).toLocaleString("id-ID")}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                      {/* Quantity */}
-                      <div className="sm:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Jumlah (Qty)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={medQuantity}
-                          onChange={(e) => setMedQuantity(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-center focus:border-indigo-500 focus:outline-none"
-                        />
-                      </div>
+                        {/* Quantity */}
+                        <div className="sm:col-span-2">
+                          <label className="text-[11px] font-bold text-slate-500 block mb-1">Jumlah (Qty)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={medQuantity}
+                            onChange={(e) => setMedQuantity(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-center focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
 
-                      {/* Signa / Instructions */}
-                      <div className="sm:col-span-3">
-                        <label className="text-[11px] font-bold text-slate-500 block mb-1">Aturan Pakai (Signa)</label>
-                        <input
-                          value={medInstructions}
-                          onChange={(e) => setMedInstructions(e.target.value)}
-                          placeholder="3 x 1 sesudah makan"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium focus:border-indigo-500 focus:outline-none"
-                        />
-                      </div>
+                        {/* Signa / Instructions */}
+                        <div className="sm:col-span-3">
+                          <label className="text-[11px] font-bold text-slate-500 block mb-1">Aturan Pakai (Signa)</label>
+                          <input
+                            value={medInstructions}
+                            onChange={(e) => setMedInstructions(e.target.value)}
+                            placeholder="3 x 1 sesudah makan"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                          />
+                        </div>
 
-                      {/* Add Button */}
-                      <div className="sm:col-span-2">
-                        <button
-                          type="button"
-                          onClick={handleAddMedicine}
-                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2 text-xs font-bold shadow-sm transition"
-                        >
-                          <Plus size={14} /> Tambah Obat
-                        </button>
+                        {/* Add Button */}
+                        <div className="sm:col-span-2">
+                          <button
+                            type="button"
+                            onClick={handleAddMedicine}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2 text-xs font-bold shadow-sm transition"
+                          >
+                            <Plus size={14} /> Tambah Obat
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Prescriptions Table */}
                   {prescriptionItems.length > 0 ? (
@@ -815,7 +974,7 @@ export default function Consultation() {
                             <th className="py-2.5 px-3 text-center">Jumlah</th>
                             <th className="py-2.5 px-3">Aturan Pakai</th>
                             <th className="py-2.5 px-3 text-right">Subtotal</th>
-                            <th className="py-2.5 px-3 text-center">Aksi</th>
+                            {!isCompleted && <th className="py-2.5 px-3 text-center">Aksi</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -828,16 +987,18 @@ export default function Consultation() {
                               <td className="py-2.5 px-3 text-right font-bold text-indigo-600">
                                 Rp {(item.price * item.quantity).toLocaleString("id-ID")}
                               </td>
-                              <td className="py-2.5 px-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveMedicine(item.medicineId)}
-                                  className="text-slate-400 hover:text-red-600 transition"
-                                  title="Hapus Obat"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </td>
+                              {!isCompleted && (
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveMedicine(item.medicineId)}
+                                    className="text-slate-400 hover:text-red-600 transition"
+                                    title="Hapus Obat"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -849,14 +1010,16 @@ export default function Consultation() {
                             <td className="py-2.5 px-3 text-right font-black text-indigo-700">
                               Rp {totalPrescriptionPrice.toLocaleString("id-ID")}
                             </td>
-                            <td></td>
+                            {!isCompleted && <td></td>}
                           </tr>
                         </tfoot>
                       </table>
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center text-xs text-slate-400">
-                      Belum ada obat yang dimasukkan ke resep. Pilih obat di atas untuk menambahkan.
+                      {isCompleted
+                        ? "Tidak ada obat yang diresepkan untuk kunjungan ini."
+                        : "Belum ada obat yang dimasukkan ke resep. Pilih obat di atas untuk menambahkan."}
                     </div>
                   )}
 
@@ -868,29 +1031,110 @@ export default function Consultation() {
                     <textarea
                       rows={2}
                       value={clinicalNotes}
+                      readOnly={isCompleted}
                       onChange={(e) => setClinicalNotes(e.target.value)}
                       placeholder="Instruksi pola makan, istirahat cukup, hindari makanan pedas/dingin, kontrol ulang bila demam berlanjut..."
-                      className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs focus:border-indigo-500 focus:outline-none resize-none"
+                      className={`w-full rounded-xl border p-3 text-xs focus:outline-none resize-none ${
+                        isCompleted
+                          ? "border-slate-200 bg-slate-100/70 text-slate-700 cursor-not-allowed"
+                          : "border-slate-200 bg-white focus:border-indigo-500"
+                      }`}
                     />
                   </div>
+
+                  {/* Follow-up / Kontrol Ulang Section (Hanya Dokter yang Berwenang Membuat) */}
+                  {!isCompleted && (
+                    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-white p-4 space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={scheduleFollowUp}
+                            onChange={(e) => setScheduleFollowUp(e.target.checked)}
+                            className="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="font-bold text-xs text-[#101a3d] flex items-center gap-1.5">
+                            <Calendar size={15} className="text-indigo-600" />
+                            Tetapkan Jadwal Kontrol Ulang untuk Pasien Ini
+                          </span>
+                        </label>
+                        <span className="rounded-md bg-indigo-100/70 text-[10px] font-bold text-indigo-800 px-2 py-0.5">
+                          Otoritas Dokter
+                        </span>
+                      </div>
+
+                      {scheduleFollowUp && (
+                        <div className="mt-3 pt-3 border-t border-indigo-100/80 space-y-3">
+                          <CalendarPicker
+                            value={followUpDate}
+                            onChange={(val) => setFollowUpDate(val)}
+                            minDate={new Date().toISOString().split("T")[0]}
+                            label="Pilih Tanggal Kontrol Lanjutan (Kalender Visual Dokter)"
+                          />
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                              Catatan Khusus Kontrol (Tujuan Evaluasi)
+                            </label>
+                            <input
+                              value={followUpNotes}
+                              onChange={(e) => setFollowUpNotes(e.target.value)}
+                              placeholder="Misal: Evaluasi hasil lab darah tepi, cek tensi ulang, evaluasi nyeri lambung"
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 font-medium focus:border-indigo-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. FINISH ACTION BUTTON BAR */}
                 <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-200">
-                  <div className="text-xs text-slate-500 font-medium">
-                    Menyelesaikan konsultasi akan otomatis mengirim resep ke <strong>Farmasi</strong> & menerbitkan <strong>Invoice</strong> pasien.
-                  </div>
+                  {isCompleted ? (
+                    <>
+                      <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold">
+                        <CheckCircle2 size={16} className="text-emerald-600" />
+                        Status Rekam Medis: <strong className="text-[#101a3d]">{selected.status}</strong>
+                        {selected.status === "PAID" ? " (Tagihan Telah Lunas di Kasir)" : " (Resep Dikirim ke Farmasi)"}
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={handleFinishConsultation}
-                    disabled={finishing}
-                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-6 py-3 text-xs font-bold text-white shadow-lg transition disabled:opacity-50"
-                  >
-                    <CheckCircle2 size={16} />
-                    {finishing ? "Menyelesaikan Konsultasi..." : "Selesaikan Konsultasi & Kirim Resep ke Farmasi"}
-                    <ArrowRight size={16} />
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextPatient = visits.find(
+                            (v) => v.id !== selected.id && (v.status === "IN_CONSULTATION" || v.status === "CALLED" || v.status === "WAITING")
+                          );
+                          if (nextPatient) {
+                            selectPatient(nextPatient);
+                          } else {
+                            setQueueTab("READY");
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-6 py-3 text-xs font-bold text-white shadow-lg transition"
+                      >
+                        Periksa Pasien Berikutnya
+                        <ArrowRight size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-slate-500 font-medium">
+                        Menyelesaikan konsultasi akan otomatis mengirim resep ke <strong>Farmasi</strong> & menerbitkan <strong>Invoice</strong> pasien.
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleFinishConsultation}
+                        disabled={finishing}
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 px-6 py-3 text-xs font-bold text-white shadow-lg transition disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={16} />
+                        {finishing ? "Menyelesaikan Konsultasi..." : "Selesaikan Konsultasi & Kirim Resep ke Farmasi"}
+                        <ArrowRight size={16} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </>

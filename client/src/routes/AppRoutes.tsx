@@ -12,6 +12,7 @@ import InvoicesPage from "../pages/admin/InvoicesPage";
 import ReportsPage from "../pages/admin/ReportsPage";
 import UsersPage from "../pages/admin/UsersPage";
 import SettingsPage from "../pages/admin/SettingsPage";
+import AdminSchedulesPage from "../pages/admin/AdminSchedulesPage";
 import DoctorDashboard from "../pages/doctor/DoctorDashboard";
 import DoctorQueue from "../pages/doctor/DoctorQueue";
 import DoctorPatients from "../pages/doctor/Patients";
@@ -80,6 +81,7 @@ export default function AppRoutes() {
             element={<RegistrationPage />}
           />
           <Route path="/dashboard/admin/queue" element={<AdminQueue />} />
+          <Route path="/dashboard/admin/schedules" element={<AdminSchedulesPage />} />
           <Route path="/dashboard/admin/invoices" element={<InvoicesPage />} />
           <Route path="/dashboard/admin/reports" element={<ReportsPage />} />
           <Route path="/dashboard/admin/users" element={<UsersPage />} />

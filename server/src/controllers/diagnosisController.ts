@@ -19,7 +19,11 @@ export async function createDiagnosis(
 
     const visit = await prisma.visit.findUnique({
       where: { id: data.visitId },
-      include: { doctor: { select: { userId: true } } },
+      include: {
+        doctor: { select: { userId: true } },
+        invoice: true,
+        diagnoses: true,
+      },
     });
 
     if (!visit) {
@@ -36,7 +40,14 @@ export async function createDiagnosis(
       });
     }
 
-    if (["COMPLETED", "PAID"].includes(visit.status)) {
+    if (visit.status === "PAID" || visit.invoice?.status === "PAID") {
+      return res.status(409).json({
+        success: false,
+        message: "Diagnosis cannot be added to a completed visit",
+      });
+    }
+
+    if (visit.status === "COMPLETED" && visit.diagnoses.length > 0) {
       return res.status(409).json({
         success: false,
         message: "Diagnosis cannot be added to a completed visit",

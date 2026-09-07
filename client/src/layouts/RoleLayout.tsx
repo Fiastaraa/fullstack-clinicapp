@@ -42,6 +42,7 @@ const configs: Record<UserRole, RoleConfig> = {
       ["Data Pasien", "/dashboard/admin/patients", Users],
       ["Check-in Antrean Poli", "/dashboard/admin/registration", UserPlus],
       ["Antrean Digital", "/dashboard/admin/queue", Clock3],
+      ["Jadwal Kontrol", "/dashboard/admin/schedules", CalendarDays],
       ["Invoice & Pembayaran", "/dashboard/admin/invoices", Receipt],
       ["Laporan & Analitik", "/dashboard/admin/reports", BarChart3],
       ["Kelola User", "/dashboard/admin/users", UserRound],

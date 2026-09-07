@@ -9,6 +9,27 @@ export async function getUsers(_req: Request, res: Response) {
         email: true,
         role: true,
         createdAt: true,
+        patient: {
+          select: {
+            id: true,
+            nik: true,
+            phone: true,
+            gender: true,
+            age: true,
+          },
+        },
+        doctor: {
+          select: {
+            id: true,
+            specialization: true,
+            poli: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
