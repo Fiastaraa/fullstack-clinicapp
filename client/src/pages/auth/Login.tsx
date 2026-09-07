@@ -165,10 +165,6 @@ export default function Login() {
               : `Masuk sebagai ${staffRoles.find((item) => item[0] === role)?.[1]}`}
           </button>
         </form>
-
-        <div className="mt-4 rounded-xl bg-slate-100 p-3 text-center text-[11px] text-slate-500 font-medium">
-          Password Demo Standar: <b className="text-[#101a3d]">Admin12345</b>
-        </div>
       </div>
     </AuthLayout>
   );
