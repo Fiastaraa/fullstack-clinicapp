@@ -31,6 +31,9 @@ const RealtimeContext = createContext<{ change: ClinicChange | null }>({
 const getSocketUrl = () => {
   const customUrl = import.meta.env.VITE_SOCKET_URL as string | undefined;
   if (customUrl) return customUrl;
+  if (typeof window !== "undefined" && window.location.hostname && window.location.hostname !== "localhost") {
+    return `${window.location.protocol}//${window.location.hostname}:3001`;
+  }
   const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) || "http://localhost:3001/api";
   return apiUrl.replace(/\/api\/?$/, "");
 };
@@ -49,12 +52,23 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       transports: ["websocket", "polling"],
     });
 
+    socket.on("connect", () => {
+      console.log("[Realtime] Connected to WebSocket at", socketUrl);
+    });
+
     socket.on("clinic:data-changed", (data: ClinicChange) => {
+      console.log("[Realtime] Data changed event received:", data);
       setChange({ ...data, seq: ++seq });
     });
 
+    socket.on("connect_error", (err) => {
+      console.warn("[Realtime] Socket connection error:", err.message);
+    });
+
     return () => {
+      socket.off("connect");
       socket.off("clinic:data-changed");
+      socket.off("connect_error");
       socket.disconnect();
     };
   }, [token]);

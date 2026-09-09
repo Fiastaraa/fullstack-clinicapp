@@ -224,21 +224,21 @@ for (const d of doctorsData) {
     docXml += pText("Seluruh akun dokter di bawah ini aktif dengan password: Dokter12345");
 
     const doctorTable = [
-      ["Dr. Andi Pratama", "dr.andi@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
-      ["Dr. Dimas Anggara", "dr.dimas@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
-      ["Dr. Citra Lestari", "dr.citra@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
-      ["Dr. Budi Santoso, Sp.OG", "dr.budi@assistdoc.com", "Poli Obgyn (OBG)", "Spesialis Kebidanan & Kandungan"],
-      ["Dr. Sarah Wijaya, Sp.A", "dr.sarah@assistdoc.com", "Poli Anak (ANK)", "Spesialis Kesehatan Anak"],
-      ["Dr. Hendra Gunawan, Sp.PD", "dr.hendra@assistdoc.com", "Poli Penyakit Dalam (INT)", "Spesialis Penyakit Dalam"],
-      ["Dr. Ratna Sari, Sp.M", "dr.ratna@assistdoc.com", "Poli Mata (MAT)", "Spesialis Mata"],
-      ["Dr. Denny Kurniawan, Sp.THT-KL", "dr.denny@assistdoc.com", "Poli THT (THT)", "Spesialis THT"],
-      ["Dr. Kevin Sanjaya, Sp.JP", "dr.kevin@assistdoc.com", "Poli Jantung (JAN)", "Spesialis Jantung & Pembuluh Darah"],
-      ["Dr. Maya Indah, Sp.KK", "dr.maya@assistdoc.com", "Poli Kulit & Kelamin (KUL)", "Spesialis Kulit & Kelamin"],
-      ["Dr. Rizky Fauzi, Sp.N", "dr.rizky@assistdoc.com", "Poli Saraf (SAR)", "Spesialis Saraf (Neurolog)"],
-      ["Dr. Wahyu Hidayat, Sp.P", "dr.wahyu@assistdoc.com", "Poli Paru (PAR)", "Spesialis Paru & Pernapasan"],
-      ["Dr. Fajar Nugroho, Sp.B", "dr.fajar@assistdoc.com", "Poli Bedah (BDH)", "Spesialis Bedah Umum"],
-      ["Drg. Anita Rahayu", "drg.anita@assistdoc.com", "Poli Gigi (GIG)", "Dokter Gigi Umum"],
-      ["Drg. Bayu Pratomo, Sp.KG", "drg.bayu@assistdoc.com", "Poli Gigi (GIG)", "Spesialis Konservasi Gigi"],
+      ["dr. Andi Pratama", "dr.andi@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
+      ["dr. Dimas Anggara", "dr.dimas@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
+      ["dr. Citra Lestari", "dr.citra@assistdoc.com", "Poli Umum (UMU)", "Dokter Umum"],
+      ["dr. Budi Santoso, Sp.OG", "dr.budi@assistdoc.com", "Poli Obgyn (OBG)", "Spesialis Kebidanan & Kandungan"],
+      ["dr. Sarah Wijaya, Sp.A", "dr.sarah@assistdoc.com", "Poli Anak (ANK)", "Spesialis Kesehatan Anak"],
+      ["dr. Hendra Gunawan, Sp.PD", "dr.hendra@assistdoc.com", "Poli Penyakit Dalam (INT)", "Spesialis Penyakit Dalam"],
+      ["dr. Ratna Sari, Sp.M", "dr.ratna@assistdoc.com", "Poli Mata (MAT)", "Spesialis Mata"],
+      ["dr. Denny Kurniawan, Sp.THT-KL", "dr.denny@assistdoc.com", "Poli THT (THT)", "Spesialis THT"],
+      ["dr. Kevin Sanjaya, Sp.JP", "dr.kevin@assistdoc.com", "Poli Jantung (JAN)", "Spesialis Jantung & Pembuluh Darah"],
+      ["dr. Maya Indah, Sp.KK", "dr.maya@assistdoc.com", "Poli Kulit & Kelamin (KUL)", "Spesialis Kulit & Kelamin"],
+      ["dr. Rizky Fauzi, Sp.N", "dr.rizky@assistdoc.com", "Poli Saraf (SAR)", "Spesialis Saraf (Neurolog)"],
+      ["dr. Wahyu Hidayat, Sp.P", "dr.wahyu@assistdoc.com", "Poli Paru (PAR)", "Spesialis Paru & Pernapasan"],
+      ["dr. Fajar Nugroho, Sp.B", "dr.fajar@assistdoc.com", "Poli Bedah (BDH)", "Spesialis Bedah Umum"],
+      ["drg. Anita Rahayu", "drg.anita@assistdoc.com", "Poli Gigi (GIG)", "Dokter Gigi Umum"],
+      ["drg. Bayu Pratomo, Sp.KG", "drg.bayu@assistdoc.com", "Poli Gigi (GIG)", "Spesialis Konservasi Gigi"],
     ];
 
     for (const row of doctorTable) {
@@ -359,21 +359,21 @@ broadcastClinicChange("medicines");
 ### 4. Tabel Akun Login Dokter (Password: \`Dokter12345\`)
 | No | Dokter | Poliklinik | Email Login |
 |---|---|---|---|
-| 1 | Dr. Andi Pratama | Poli Umum (UMU) | dr.andi@assistdoc.com |
-| 2 | Dr. Dimas Anggara | Poli Umum (UMU) | dr.dimas@assistdoc.com |
-| 3 | Dr. Citra Lestari | Poli Umum (UMU) | dr.citra@assistdoc.com |
-| 4 | Dr. Budi Santoso, Sp.OG | Poli Obgyn (OBG) | dr.budi@assistdoc.com |
-| 5 | Dr. Sarah Wijaya, Sp.A | Poli Anak (ANK) | dr.sarah@assistdoc.com |
-| 6 | Dr. Hendra Gunawan, Sp.PD | Poli Penyakit Dalam (INT) | dr.hendra@assistdoc.com |
-| 7 | Dr. Ratna Sari, Sp.M | Poli Mata (MAT) | dr.ratna@assistdoc.com |
-| 8 | Dr. Denny Kurniawan, Sp.THT-KL | Poli THT (THT) | dr.denny@assistdoc.com |
-| 9 | Dr. Kevin Sanjaya, Sp.JP | Poli Jantung (JAN) | dr.kevin@assistdoc.com |
-| 10 | Dr. Maya Indah, Sp.KK | Poli Kulit & Kelamin (KUL) | dr.maya@assistdoc.com |
-| 11 | Dr. Rizky Fauzi, Sp.N | Poli Saraf (SAR) | dr.rizky@assistdoc.com |
-| 12 | Dr. Wahyu Hidayat, Sp.P | Poli Paru (PAR) | dr.wahyu@assistdoc.com |
-| 13 | Dr. Fajar Nugroho, Sp.B | Poli Bedah (BDH) | dr.fajar@assistdoc.com |
-| 14 | Drg. Anita Rahayu | Poli Gigi (GIG) | drg.anita@assistdoc.com |
-| 15 | Drg. Bayu Pratomo, Sp.KG | Poli Gigi (GIG) | drg.bayu@assistdoc.com |
+| 1 | dr. Andi Pratama | Poli Umum (UMU) | dr.andi@assistdoc.com |
+| 2 | dr. Dimas Anggara | Poli Umum (UMU) | dr.dimas@assistdoc.com |
+| 3 | dr. Citra Lestari | Poli Umum (UMU) | dr.citra@assistdoc.com |
+| 4 | dr. Budi Santoso, Sp.OG | Poli Obgyn (OBG) | dr.budi@assistdoc.com |
+| 5 | dr. Sarah Wijaya, Sp.A | Poli Anak (ANK) | dr.sarah@assistdoc.com |
+| 6 | dr. Hendra Gunawan, Sp.PD | Poli Penyakit Dalam (INT) | dr.hendra@assistdoc.com |
+| 7 | dr. Ratna Sari, Sp.M | Poli Mata (MAT) | dr.ratna@assistdoc.com |
+| 8 | dr. Denny Kurniawan, Sp.THT-KL | Poli THT (THT) | dr.denny@assistdoc.com |
+| 9 | dr. Kevin Sanjaya, Sp.JP | Poli Jantung (JAN) | dr.kevin@assistdoc.com |
+| 10 | dr. Maya Indah, Sp.KK | Poli Kulit & Kelamin (KUL) | dr.maya@assistdoc.com |
+| 11 | dr. Rizky Fauzi, Sp.N | Poli Saraf (SAR) | dr.rizky@assistdoc.com |
+| 12 | dr. Wahyu Hidayat, Sp.P | Poli Paru (PAR) | dr.wahyu@assistdoc.com |
+| 13 | dr. Fajar Nugroho, Sp.B | Poli Bedah (BDH) | dr.fajar@assistdoc.com |
+| 14 | drg. Anita Rahayu | Poli Gigi (GIG) | drg.anita@assistdoc.com |
+| 15 | drg. Bayu Pratomo, Sp.KG | Poli Gigi (GIG) | drg.bayu@assistdoc.com |
 `;
     fs.writeFileSync(path.join(latihanDir, "Penjelasan_Logic_seedDummyData.md"), markdownContent, "utf8");
 

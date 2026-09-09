@@ -30,7 +30,7 @@ router.patch(
 
 router.patch(
   "/:id/notes",
-  authorizeRoles("NURSE", "DOCTOR"),
+  authorizeRoles("ADMIN", "DOCTOR", "NURSE", "PHARMACIST"),
   updateVisitNotes,
 );
 
@@ -48,7 +48,7 @@ router.post(
 
 router.patch(
   "/:id/status",
-  authorizeRoles("ADMIN", "DOCTOR", "NURSE"),
+  authorizeRoles("ADMIN", "DOCTOR", "NURSE", "PHARMACIST"),
   updateVisitStatus,
 );
 

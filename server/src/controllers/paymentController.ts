@@ -15,6 +15,8 @@ type InvoiceOwner = {
   };
 };
 
+const latestInvoiceOrderId = new Map<number, string>();
+
 function canAccessInvoice(req: AuthenticatedRequest, invoice: InvoiceOwner) {
   if (req.user?.role === "PATIENT") {
     return invoice.visit.patient.userId === req.user.userId;
@@ -109,6 +111,7 @@ export async function createSnapPayment(
 
     // Unique order ID format: INV-{invoiceId}-{timestamp}
     const orderId = `INV-${invoice.id}-${Date.now()}`;
+    latestInvoiceOrderId.set(invoice.id, orderId);
 
     // Item details
     const itemDetails: ItemDetail[] = [];
@@ -356,8 +359,13 @@ export async function getPaymentStatus(
     }
 
     let statusData: any = null;
+    const midtransOrderId =
+      !orderId.includes("-", 4) && latestInvoiceOrderId.has(invoiceId)
+        ? latestInvoiceOrderId.get(invoiceId)!
+        : orderId;
+
     try {
-      statusData = await midtransService.checkTransactionStatus(orderId);
+      statusData = await midtransService.checkTransactionStatus(midtransOrderId);
     } catch (err: any) {
       console.warn("[Midtrans Status Check Warning]:", err?.message);
     }
@@ -370,9 +378,10 @@ export async function getPaymentStatus(
       forceSettle;
 
     if (isSuccess) {
+      const preferredMethod = req.query.method === "TRANSFER" ? "TRANSFER" : "E_WALLET";
       const paymentMethod = statusData?.payment_type
         ? midtransService.mapPaymentMethod(statusData.payment_type)
-        : "E_WALLET";
+        : preferredMethod;
 
       const settlement = await settleInvoice(invoiceId, paymentMethod);
       if (settlement && !settlement.alreadyPaid) {

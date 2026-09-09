@@ -1,8 +1,18 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { Alert, Linking, StyleSheet, Text, View } from "react-native";
 import {
-  Button,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
+import { Ionicons } from "@expo/vector-icons";
+import {
   Card,
   EmptyState,
   ErrorNotice,
@@ -12,7 +22,7 @@ import {
   StatusPill,
   uiStyles
 } from "../../src/components/ui";
-import { colors } from "../../src/constants/theme";
+import { colors, shadow } from "../../src/constants/theme";
 import { useRealtimeRefresh } from "../../src/hooks/useRealtimeRefresh";
 import { clinicService } from "../../src/services/clinicService";
 import {
@@ -23,11 +33,23 @@ import {
 import type { Visit } from "../../src/types";
 import { formatCurrency, formatDate, messageFromError } from "../../src/utils/format";
 
+type SnapSession = {
+  token: string;
+  redirectUrl: string;
+  orderId: string;
+  invoiceId: number;
+  grossAmount: number;
+};
+
 export default function InvoicesScreen() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<number | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState("");
+
+  // In-App Midtrans Snap WebView State
+  const [activeSnap, setActiveSnap] = useState<SnapSession | null>(null);
 
   const load = useCallback(async (syncUnpaid = false) => {
     try {
@@ -72,54 +94,58 @@ export default function InvoicesScreen() {
   useFocusEffect(useCallback(() => void load(true), [load]));
   useRealtimeRefresh(["invoices", "visits"], () => void load(false));
 
-  async function pay(invoiceId: number) {
-    Alert.alert(
-      "Pembayaran Tagihan",
-      "Pilih metode penyelesaian pembayaran:",
-      [
-        {
-          text: "Bayar Lunas Sekarang",
-          onPress: async () => {
-            setPayingId(invoiceId);
-            setError("");
-            try {
-              await confirmInvoicePayment(invoiceId);
-              Alert.alert(
-                "Pembayaran Berhasil",
-                "Tagihan telah terverifikasi lunas! Resep obat Anda kini dapat segera diproses dan diserahkan oleh Farmasi."
-              );
-              await load(false);
-            } catch (confirmError) {
-              setError(messageFromError(confirmError, "Gagal memproses pembayaran."));
-            } finally {
-              setPayingId(null);
-            }
-          },
-        },
-        {
-          text: "Buka Gateway Midtrans",
-          onPress: async () => {
-            setPayingId(invoiceId);
-            setError("");
-            try {
-              const result = await startInvoicePayment(invoiceId);
-              if (result.mode === "mock") {
-                Alert.alert("Pembayaran Berhasil", "Tagihan Anda telah terverifikasi lunas!");
-                await load(false);
-              }
-            } catch (requestError) {
-              setError(messageFromError(requestError, "Pembayaran gagal diproses."));
-            } finally {
-              setPayingId(null);
-            }
-          },
-        },
-        {
-          text: "Batal",
-          style: "cancel",
-        },
-      ]
-    );
+  // 1. One-click Pay via Midtrans
+  async function handlePayWithMidtrans(invoiceId: number) {
+    setPayingId(invoiceId);
+    setError("");
+    try {
+      const snapData = await startInvoicePayment(invoiceId);
+      if (!snapData.redirectUrl) {
+        throw new Error("Link pembayaran Midtrans tidak ditemukan.");
+      }
+      setActiveSnap(snapData);
+    } catch (err) {
+      setError(messageFromError(err, "Gagal membuka pembayaran Midtrans."));
+    } finally {
+      setPayingId(null);
+    }
+  }
+
+  // 2. Settlement on Success / Manual Verification
+  async function handleConfirmSuccess() {
+    if (!activeSnap) return;
+    setVerifying(true);
+    try {
+      await confirmInvoicePayment(activeSnap.invoiceId, "TRANSFER");
+      setActiveSnap(null);
+      await load(false);
+      Alert.alert(
+        "Pembayaran Berhasil! 🎉",
+        "Tagihan telah terverifikasi lunas. Notifikasi langsung terhubung secara realtime ke sistem klinik dan resep obat siap diserahkan Farmasi."
+      );
+    } catch (err) {
+      Alert.alert(
+        "Perhatian",
+        "Pembayaran belum terkonfirmasi selesai. Silakan selesaikan pembayaran terlebih dahulu."
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  // 3. Monitor Midtrans WebView URL changes
+  function handleNavigationStateChange(navState: { url: string }) {
+    const url = (navState.url || "").toLowerCase();
+    // Check if user reached Midtrans finish / settlement redirect
+    if (
+      url.includes("finish") ||
+      url.includes("settlement") ||
+      url.includes("transaction_status=settlement") ||
+      url.includes("status_code=200") ||
+      url.includes("status_code=201")
+    ) {
+      void handleConfirmSuccess();
+    }
   }
 
   return (
@@ -170,11 +196,25 @@ export default function InvoicesScreen() {
                 />
               </View>
               {invoice.status === "UNPAID" ? (
-                <Button
-                  label="Bayar melalui Midtrans"
-                  onPress={() => pay(invoice.id)}
+                <Pressable
+                  style={[
+                    styles.payNowButton,
+                    payingId === invoice.id && styles.payNowButtonDisabled
+                  ]}
+                  onPress={() => handlePayWithMidtrans(invoice.id)}
                   disabled={payingId === invoice.id}
-                />
+                >
+                  {payingId === invoice.id ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Ionicons name="card-outline" size={17} color={colors.white} />
+                  )}
+                  <Text style={styles.payNowButtonText}>
+                    {payingId === invoice.id
+                      ? "Menghubungkan ke Midtrans..."
+                      : "Bayar via Midtrans"}
+                  </Text>
+                </Pressable>
               ) : (
                 <Text style={styles.paid}>
                   Pembayaran selesai
@@ -187,6 +227,71 @@ export default function InvoicesScreen() {
           );
         })
       )}
+
+      {/* Official Midtrans Snap In-App WebView Modal */}
+      <Modal
+        visible={Boolean(activeSnap)}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setActiveSnap(null)}
+      >
+        <SafeAreaView style={styles.snapSafeArea} edges={["top", "bottom"]}>
+          {/* Top Bar Navigation */}
+          <View style={styles.snapTopBar}>
+            <Pressable
+              style={styles.snapCloseBtn}
+              onPress={() => setActiveSnap(null)}
+            >
+              <Ionicons name="close" size={22} color={colors.ink} />
+            </Pressable>
+
+            <View style={styles.snapTitleWrap}>
+              <View style={styles.snapTitleRow}>
+                <Text style={styles.snapTitle}>Midtrans Gateway</Text>
+                <View style={styles.liveBadge}>
+                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                </View>
+              </View>
+              <Text style={styles.snapSubtitle}>
+                INV-{String(activeSnap?.invoiceId || 0).padStart(5, "0")} •{" "}
+                {activeSnap ? formatCurrency(activeSnap.grossAmount) : ""}
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.snapFinishBtn}
+              onPress={handleConfirmSuccess}
+              disabled={verifying}
+            >
+              {verifying ? (
+                <ActivityIndicator size="small" color={colors.teal} />
+              ) : (
+                <Text style={styles.snapFinishBtnText}>Cek Selesai</Text>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Authentic Midtrans Snap Payment Page */}
+          {activeSnap ? (
+            <WebView
+              source={{ uri: activeSnap.redirectUrl }}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.webViewLoading}>
+                  <ActivityIndicator size="large" color={colors.teal} />
+                  <Text style={styles.webViewLoadingText}>
+                    Memuat Gateway Midtrans...
+                  </Text>
+                </View>
+              )}
+              onNavigationStateChange={handleNavigationStateChange}
+              style={styles.webView}
+            />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </Screen>
   );
 }
@@ -226,5 +331,109 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textAlign: "center",
     paddingVertical: 10
+  },
+
+  // Simplified Card Button
+  payNowButton: {
+    backgroundColor: colors.teal,
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 6
+  },
+  payNowButtonDisabled: {
+    opacity: 0.7
+  },
+  payNowButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+
+  // Midtrans Snap In-App WebView Modal
+  snapSafeArea: {
+    flex: 1,
+    backgroundColor: colors.white
+  },
+  snapTopBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.white
+  },
+  snapCloseBtn: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: colors.surface
+  },
+  snapTitleWrap: {
+    alignItems: "center"
+  },
+  snapTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  snapTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: colors.ink
+  },
+  liveBadge: {
+    backgroundColor: colors.infoSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4
+  },
+  liveBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: colors.tealDark
+  },
+  snapSubtitle: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2
+  },
+  snapFinishBtn: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.teal,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10
+  },
+  snapFinishBtnText: {
+    color: colors.tealDark,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  webView: {
+    flex: 1,
+    backgroundColor: colors.white
+  },
+  webViewLoading: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.white,
+    gap: 12
+  },
+  webViewLoadingText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.muted
   }
 });

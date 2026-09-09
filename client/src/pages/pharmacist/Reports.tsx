@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   BarChart3,
   TrendingUp,
@@ -10,21 +11,48 @@ import {
   Building2,
   CheckCircle2,
   X,
+  FileCheck,
+  Sparkles,
+  User,
+  Calendar,
+  Stethoscope,
+  Search,
 } from "lucide-react";
 import PageHeader from "../../components/common/PageHeader";
 import StatCard from "../../components/dashboard/StatCard";
 import Badge from "../../components/common/Badge";
 import { clinic, unwrap } from "../../services/clinicService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
 
 export default function Reports() {
+  const location = useLocation();
+  const [justCompletedNotice, setJustCompletedNotice] = useState<{
+    patientName: string;
+    queueNumber: string;
+  } | null>(
+    location.state?.justCompleted
+      ? {
+          patientName: location.state.patientName,
+          queueNumber: location.state.queueNumber,
+        }
+      : null
+  );
+
+  const [activeTab, setActiveTab] = useState<"completed" | "usage" | "poli">("completed");
+  const [searchQuery, setSearchQuery] = useState("");
+
   const [visits, setVisits] = useState<any[]>([]);
   const [medicines, setMedicines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<"all" | "month" | "week" | "today">("all");
   const [showPrintModal, setShowPrintModal] = useState(false);
 
-  async function loadData() {
-    setLoading(true);
+  useRealtimeRefresh(["visits", "invoices", "prescriptions"], () => {
+    loadData();
+  });
+
+  async function loadData(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const [vRes, mRes] = await Promise.all([
         clinic.visits("all"),
@@ -33,12 +61,16 @@ export default function Reports() {
       setVisits(unwrap(vRes) || []);
       setMedicines(unwrap(mRes) || []);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   // Filter visits based on selected time range
@@ -81,6 +113,22 @@ export default function Reports() {
         patientName: v.patient?.name || "Pasien",
       }))
     );
+  }, [filteredVisits]);
+
+  // Completed Prescription Visits (Obat Telah Diserahkan)
+  const completedVisits = useMemo(() => {
+    return filteredVisits
+      .filter(
+        (v) =>
+          v.status === "COMPLETED" &&
+          v.prescriptions &&
+          v.prescriptions.length > 0
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt || b.visitDate).getTime() -
+          new Date(a.updatedAt || a.visitDate).getTime()
+      );
   }, [filteredVisits]);
 
   // Key Metrics
@@ -171,6 +219,38 @@ export default function Reports() {
       percentage: totalPrescriptions > 0 ? Math.round((count / totalPrescriptions) * 100) : 0,
     }));
   }, [allFilteredRx, totalPrescriptions]);
+
+  // Search-filtered completed visits for Tab 1
+  const filteredCompletedVisits = useMemo(() => {
+    if (!searchQuery.trim()) return completedVisits;
+    const q = searchQuery.toLowerCase();
+    return completedVisits.filter((v) => {
+      const pName = (v.patient?.name || "").toLowerCase();
+      const qNum = (v.queueNumber || `A0${v.id}`).toLowerCase();
+      const doc = (v.doctor?.name || "").toLowerCase();
+      const poli = (v.poli?.name || "").toLowerCase();
+      const medMatch = (v.prescriptions || []).some((r: any) =>
+        (r.medicine?.name || "").toLowerCase().includes(q)
+      );
+      return (
+        pName.includes(q) ||
+        qNum.includes(q) ||
+        doc.includes(q) ||
+        poli.includes(q) ||
+        medMatch
+      );
+    });
+  }, [completedVisits, searchQuery]);
+
+  // Search-filtered medicine usage for Tab 2
+  const filteredMedicineUsage = useMemo(() => {
+    if (!searchQuery.trim()) return medicineUsageList;
+    const q = searchQuery.toLowerCase();
+    return medicineUsageList.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) || m.dosage.toLowerCase().includes(q)
+    );
+  }, [medicineUsageList, searchQuery]);
 
   // Daily Trend aggregation
   const dailyTrend = useMemo(() => {
@@ -270,6 +350,34 @@ export default function Reports() {
           </div>
         }
       />
+
+      {/* CELEBRATION BANNER (KETIKA BARU SAJA MENYERAHKAN OBAT DARI HALAMAN RESEP) */}
+      {justCompletedNotice && (
+        <div className="mb-6 flex items-center justify-between rounded-2xl border border-emerald-300 bg-emerald-50/90 p-4 text-sm font-semibold text-emerald-900 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200/80 text-emerald-800 shrink-0">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <p className="font-extrabold text-base text-emerald-950 flex items-center gap-2">
+                Obat Telah Berhasil Diserahkan!
+                <span className="inline-flex items-center gap-1 rounded bg-emerald-200 px-2 py-0.5 text-[10px] font-black text-emerald-900">
+                  <Sparkles size={11} /> DICATAT KE LAPORAN
+                </span>
+              </p>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Pelayanan resep pasien <strong>{justCompletedNotice.patientName}</strong> ({justCompletedNotice.queueNumber}) telah selesai dan otomatis dipindahkan ke riwayat laporan farmasi di bawah.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setJustCompletedNotice(null)}
+            className="rounded-lg bg-emerald-200/80 px-3 py-1.5 text-xs font-bold text-emerald-900 hover:bg-emerald-300 transition"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
 
       {/* STAT CARDS */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -418,66 +526,298 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* POLI DISTRIBUTION & DETAILED MEDICINE USAGE TABLE */}
-      <div className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
-        {/* POLI BREAKDOWN */}
-        <div className="ad-card p-5 space-y-4 h-fit">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-extrabold text-[#1B3C53] text-sm flex items-center gap-2">
-              <Building2 size={16} className="text-[#1B3C53]" />
-              Distribusi Resep per Poli
-            </h3>
-            <p className="text-xs text-slate-500">
-              Asal ruangan dokter penulis resep.
-            </p>
+      {/* TABS NAVIGATION */}
+      <div className="mt-8 border-b border-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <nav className="flex space-x-2 overflow-x-auto" aria-label="Tabs">
+            <button
+              onClick={() => {
+                setActiveTab("completed");
+                setSearchQuery("");
+              }}
+              className={`inline-flex items-center gap-2.5 px-4 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
+                activeTab === "completed"
+                  ? "border-[#1B3C53] text-[#1B3C53] bg-teal-50/50 rounded-t-xl"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              <FileCheck
+                size={18}
+                className={activeTab === "completed" ? "text-emerald-600" : "text-slate-400"}
+              />
+              <span>Riwayat Resep Selesai & Diserahkan ke Pasien</span>
+              <span
+                className={`ml-1.5 px-2 py-0.5 rounded-full text-xs font-black ${
+                  activeTab === "completed"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {completedVisits.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab("usage");
+                setSearchQuery("");
+              }}
+              className={`inline-flex items-center gap-2.5 px-4 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
+                activeTab === "usage"
+                  ? "border-[#1B3C53] text-[#1B3C53] bg-teal-50/50 rounded-t-xl"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              <Pill
+                size={18}
+                className={activeTab === "usage" ? "text-teal-600" : "text-slate-400"}
+              />
+              <span>Rincian Pemakaian & Omset Per Jenis Obat</span>
+              <span
+                className={`ml-1.5 px-2 py-0.5 rounded-full text-xs font-black ${
+                  activeTab === "usage"
+                    ? "bg-teal-600 text-white"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {medicineUsageList.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab("poli");
+                setSearchQuery("");
+              }}
+              className={`inline-flex items-center gap-2.5 px-4 py-3 border-b-2 font-bold text-sm transition-all whitespace-nowrap ${
+                activeTab === "poli"
+                  ? "border-[#1B3C53] text-[#1B3C53] bg-teal-50/50 rounded-t-xl"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              <Building2
+                size={18}
+                className={activeTab === "poli" ? "text-[#1B3C53]" : "text-slate-400"}
+              />
+              <span>Distribusi Resep per Poli</span>
+              <span
+                className={`ml-1.5 px-2 py-0.5 rounded-full text-xs font-black ${
+                  activeTab === "poli"
+                    ? "bg-[#1B3C53] text-white"
+                    : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {poliDistribution.length}
+              </span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* TAB CONTENT 1: RIWAYAT RESEP SELESAI & DISERAHKAN KE PASIEN */}
+      {activeTab === "completed" && (
+        <div className="mt-6 ad-card overflow-hidden">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700 shrink-0">
+                <FileCheck size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-[#1B3C53] text-base">
+                    Riwayat Resep Selesai & Diserahkan ke Pasien
+                  </h3>
+                  <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                    <Sparkles size={11} /> DISERAHKAN OLEH FARMASI
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Data resmi kunjungan yang obatnya telah diracik, lunas, dan diserahkan langsung kepada pasien.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search
+                  size={15}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari pasien, no. antrean, obat, dokter..."
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1B3C53]/20 focus:border-[#1B3C53] transition"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-600 bg-white px-3 py-2 rounded-xl border border-slate-200 shrink-0">
+                {filteredCompletedVisits.length} resep
+              </span>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {poliDistribution.map((p) => (
-              <div
-                key={p.poli}
-                className="rounded-xl border border-slate-200 p-3 bg-slate-50/50 space-y-2 text-xs"
-              >
-                <div className="flex justify-between items-center font-bold">
-                  <span className="text-[#1B3C53]">{p.poli}</span>
-                  <span className="font-extrabold text-[#1B3C53]">{p.count} Resep</span>
-                </div>
-                {/* Progress bar */}
-                <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-[#1B3C53]"
-                    style={{ width: `${p.percentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>Kontribusi</span>
-                  <span>{p.percentage}% dari total resep</span>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#1B3C53] text-white uppercase font-bold tracking-wider">
+                <tr>
+                  <th className="px-5 py-3.5">No. Antrean & Pasien</th>
+                  <th className="py-3.5">Waktu Penyerahan</th>
+                  <th className="py-3.5">Dokter & Poli</th>
+                  <th className="py-3.5">Rincian Obat yang Diserahkan</th>
+                  <th className="py-3.5 text-right">Nilai Tagihan</th>
+                  <th className="px-5 py-3.5 text-center">Status Pelayanan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredCompletedVisits.map((v) => {
+                  const qNum = v.queueNumber || `A0${v.id}`;
+                  const invoiceTotal = Number(v.invoice?.total || 0);
+                  const medicineTotal = (v.prescriptions || []).reduce(
+                    (sum: number, r: any) =>
+                      sum + Number(r.medicine?.price || 0) * (r.quantity || 1),
+                    0
+                  );
 
-            {poliDistribution.length === 0 && (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                Tidak ada data poli tercatat
-              </div>
-            )}
+                  return (
+                    <tr key={v.id} className="hover:bg-slate-50/70 transition">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono text-xs font-black text-[#1B3C53] bg-teal-50 px-2 py-1 rounded-md border border-teal-200">
+                            {qNum}
+                          </span>
+                          <div>
+                            <p className="font-extrabold text-[#1B3C53] text-sm">
+                              {v.patient?.name}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {v.patient?.age} thn · {v.patient?.gender} · RM-{v.patient?.id}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 font-medium text-slate-700">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar size={13} className="text-slate-400" />
+                          <span>
+                            {new Date(v.updatedAt || v.visitDate).toLocaleDateString(
+                              "id-ID",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              }
+                            )}
+                          </span>
+                          <span className="text-slate-400 text-[11px]">
+                            {new Date(v.updatedAt || v.visitDate).toLocaleTimeString(
+                              "id-ID",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 font-medium text-slate-800">
+                        <p className="font-bold text-[#1B3C53]">
+                          Dr. {v.doctor?.name}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {v.poli?.name || "Poli Umum"}
+                        </p>
+                      </td>
+                      <td className="py-3.5">
+                        <div className="flex flex-wrap gap-1.5 max-w-md">
+                          {(v.prescriptions || []).map((rx: any) => (
+                            <span
+                              key={rx.id}
+                              className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-800 border border-slate-200"
+                            >
+                              <Pill size={11} className="text-teal-700" />
+                              {rx.medicine?.name} ({rx.quantity}{" "}
+                              {rx.medicine?.dosage || "unit"})
+                            </span>
+                          ))}
+                          {(!v.prescriptions || v.prescriptions.length === 0) && (
+                            <span className="text-slate-400 italic text-[11px]">
+                              Konsultasi / Tindakan (Tanpa Obat Fisik)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3.5 text-right font-bold text-slate-900">
+                        <p className="text-sm font-black text-[#1B3C53]">
+                          Rp{" "}
+                          {(invoiceTotal > 0
+                            ? invoiceTotal
+                            : medicineTotal
+                          ).toLocaleString("id-ID")}
+                        </p>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded">
+                          LUNAS
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 size={13} className="text-emerald-600" />{" "}
+                          DISERAHKAN (SELESAI)
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredCompletedVisits.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="py-12 text-center text-slate-400 text-xs"
+                    >
+                      {searchQuery
+                        ? "Tidak ada resep selesai yang cocok dengan kata kunci pencarian."
+                        : "Belum ada resep yang diserahkan pada periode filter ini."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
+      )}
 
-        {/* DETAILED USAGE TABLE */}
-        <div className="ad-card overflow-hidden">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-3">
+      {/* TAB CONTENT 2: RINCIAN PEMAKAIAN & OMSET PER JENIS OBAT */}
+      {activeTab === "usage" && (
+        <div className="mt-6 ad-card overflow-hidden">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="font-extrabold text-[#1B3C53] text-base">
                 Rincian Pemakaian & Omset Per Jenis Obat
               </h3>
               <p className="text-xs text-slate-500">
-                Laporan komprehensif perputaran dan nilai transaksi obat.
+                Laporan komprehensif perputaran dan nilai transaksi obat dari resep dokter.
               </p>
             </div>
-            <span className="text-xs font-bold text-slate-500">
-              {medicineUsageList.length} jenis obat terdata
-            </span>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search
+                  size={15}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari nama obat atau dosis..."
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1B3C53]/20 focus:border-[#1B3C53] transition"
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-500 bg-white px-3 py-2 rounded-xl border border-slate-200 shrink-0">
+                {filteredMedicineUsage.length} jenis obat
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -494,7 +834,7 @@ export default function Reports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {medicineUsageList.map((m) => {
+                {filteredMedicineUsage.map((m) => {
                   const isFastMoving = m.totalQty >= 10;
                   const isMediumMoving = m.totalQty > 0 && m.totalQty < 10;
 
@@ -551,6 +891,19 @@ export default function Reports() {
                     </tr>
                   );
                 })}
+
+                {filteredMedicineUsage.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="py-12 text-center text-slate-400 text-xs"
+                    >
+                      {searchQuery
+                        ? "Tidak ada obat yang cocok dengan pencarian."
+                        : "Belum ada riwayat pemakaian obat pada periode ini."}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -562,7 +915,79 @@ export default function Reports() {
             </span>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* TAB CONTENT 3: DISTRIBUSI RESEP PER POLI */}
+      {activeTab === "poli" && (
+        <div className="mt-6 space-y-6">
+          <div className="ad-card p-5">
+            <div className="border-b border-slate-100 pb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-extrabold text-[#1B3C53] text-base flex items-center gap-2">
+                  <Building2 size={18} className="text-[#1B3C53]" />
+                  Distribusi Resep per Poli & Asal Layanan
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Perbandingan volume resep yang diterbitkan oleh masing-masing poliklinik/ruang konsultasi.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
+                <span>Total Poli Aktif:</span>
+                <span className="text-[#1B3C53] font-black">{poliDistribution.length} Poli</span>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {poliDistribution.map((p, idx) => (
+                <div
+                  key={p.poli}
+                  className="rounded-2xl border border-slate-200 p-5 bg-white shadow-xs hover:border-[#1B3C53]/40 transition space-y-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 text-teal-700 font-black border border-teal-100 text-sm">
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-[#1B3C53] text-base">{p.poli}</h4>
+                        <p className="text-[11px] text-slate-400">Departemen Klinis</p>
+                      </div>
+                    </div>
+                    <span className="font-extrabold text-sm text-[#1B3C53] bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                      {p.count} Resep
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-slate-500">Kontribusi Volume</span>
+                      <span className="font-black text-[#1B3C53]">{p.percentage}%</span>
+                    </div>
+                    <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-teal-500 to-[#1B3C53] transition-all duration-500"
+                        style={{ width: `${p.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Porsi dari {totalPrescriptions} resep total</span>
+                    <span className="font-bold text-teal-700">Aktif Berjalan</span>
+                  </div>
+                </div>
+              ))}
+
+              {poliDistribution.length === 0 && (
+                <div className="col-span-full py-12 text-center text-slate-400 text-xs">
+                  Tidak ada data resep per poli pada periode filter ini.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: CETAK LAPORAN EKSEKUTIF */}
       {showPrintModal && (

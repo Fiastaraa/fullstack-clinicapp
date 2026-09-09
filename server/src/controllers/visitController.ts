@@ -52,6 +52,13 @@ function canChangeStatus(
       "CALLED:IN_CONSULTATION",
       "IN_CONSULTATION:COMPLETED",
     ],
+    PHARMACIST: [
+      "PAID:COMPLETED",
+      "COMPLETED:COMPLETED",
+      "WAITING:COMPLETED",
+      "CALLED:COMPLETED",
+      "IN_CONSULTATION:COMPLETED",
+    ],
   };
 
   return allowed[role]?.includes(`${current}:${next}`) ?? false;

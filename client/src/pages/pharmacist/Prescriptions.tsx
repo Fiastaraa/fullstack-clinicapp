@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Pill,
   RefreshCw,
@@ -12,6 +13,9 @@ import {
   X,
   ShieldCheck,
   ShieldAlert,
+  Send,
+  Sparkles,
+  BarChart3,
 } from "lucide-react";
 import PageHeader from "../../components/common/PageHeader";
 import Badge from "../../components/common/Badge";
@@ -81,13 +85,14 @@ type Visit = {
 };
 
 export default function Prescriptions() {
+  const navigate = useNavigate();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVisitId, setSelectedVisitId] = useState<number | null>(null);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "READY">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ACTIVE" | "PENDING" | "READY" | "COMPLETED" | "ALL">("ACTIVE");
   const [dateFilter, setDateFilter] = useState<"today" | "all">("all");
 
   // Notifications
@@ -99,21 +104,101 @@ export default function Prescriptions() {
   // Print Modals
   const [printMode, setPrintMode] = useState<"etiket" | "salinan_resep" | null>(null);
 
+  // Track previous payment status to detect realtime payments
+  const prevPaidStatusRef = useRef<Map<number, string>>(new Map());
+
+  // Helper to determine if visit has been completely finalized by pharmacy
+  function isPharmacyDone(v: any): boolean {
+    if (!v) return false;
+    if (v.notes && typeof v.notes === "string" && v.notes.includes("[OBAT_DISERAHKAN]")) {
+      return true;
+    }
+    // If paid by patient, it must stay ACTIVE until pharmacy hands it over
+    if (v.invoice?.status === "PAID") {
+      return false;
+    }
+    return v.status === "COMPLETED";
+  }
+
+  // Audio chime
+  function playNotificationChime() {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15); // A5
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    } catch {
+      // Audio context might be restricted
+    }
+  }
+
   async function loadVisits(silent = false) {
     if (!silent) setLoading(true);
     try {
       const res = await clinic.visits(dateFilter);
       const allVisits = unwrap<Visit[]>(res) || [];
-      // Filter only visits that have prescriptions
+      // Hanya kunjungan yang memiliki resep obat fisik yang dikirim ke farmasi
       const rxVisits = allVisits.filter(
         (v) => v.prescriptions && v.prescriptions.length > 0
       );
-      setVisits(rxVisits);
 
-      // Preserve or set selected visit
-      if (rxVisits.length > 0) {
-        if (!selectedVisitId || !rxVisits.some((v) => v.id === selectedVisitId)) {
-          setSelectedVisitId(rxVisits[0].id);
+      // Sort visits with highest priority for patients who have paid:
+      // Priority 1: Paid by patient & not yet handed over (ready to compound/handover)
+      // Priority 2: Unpaid & not completed
+      // Priority 3: Completed (handed over)
+      const sortedVisits = [...rxVisits].sort((a, b) => {
+        const aPaidActive = a.invoice?.status === "PAID" && !isPharmacyDone(a);
+        const bPaidActive = b.invoice?.status === "PAID" && !isPharmacyDone(b);
+        if (aPaidActive && !bPaidActive) return -1;
+        if (!aPaidActive && bPaidActive) return 1;
+
+        const aDone = isPharmacyDone(a);
+        const bDone = isPharmacyDone(b);
+        if (!aDone && bDone) return -1;
+        if (aDone && !bDone) return 1;
+
+        return new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime();
+      });
+
+      // Realtime payment listener: detect when an invoice transitions to PAID
+      let newlyPaidVisitId: number | null = null;
+      sortedVisits.forEach((v) => {
+        const prevStatus = prevPaidStatusRef.current.get(v.id);
+        const currStatus = v.invoice?.status;
+
+        if (prevStatus === "UNPAID" && currStatus === "PAID") {
+          const qNum = v.queueNumber || `A0${v.id}`;
+          newlyPaidVisitId = v.id;
+          playNotificationChime();
+          setMsg({
+            type: "success",
+            text: `🔔 PEMBAYARAN LUNAS (Realtime): Pasien ${v.patient.name} (${qNum}) telah melunasi tagihan! Obat langsung muncul untuk diproses.`,
+          });
+          announcePaymentReceived(qNum, v.patient.name);
+        }
+
+        if (currStatus) {
+          prevPaidStatusRef.current.set(v.id, currStatus);
+        }
+      });
+
+      setVisits(sortedVisits);
+
+      // Auto-select newly paid patient so their doctor's prescription immediately displays!
+      if (newlyPaidVisitId) {
+        setSelectedVisitId(newlyPaidVisitId);
+      } else if (sortedVisits.length > 0) {
+        if (!selectedVisitId || !sortedVisits.some((v) => v.id === selectedVisitId)) {
+          const firstUnfinishedPaid = sortedVisits.find((v) => v.invoice?.status === "PAID" && !isPharmacyDone(v));
+          setSelectedVisitId(firstUnfinishedPaid ? firstUnfinishedPaid.id : sortedVisits[0].id);
         }
       } else {
         setSelectedVisitId(null);
@@ -130,6 +215,11 @@ export default function Prescriptions() {
 
   useEffect(() => {
     loadVisits();
+    // Guaranteed 3-second realtime background polling fallback for Admin & Mobile sync
+    const interval = setInterval(() => {
+      loadVisits(true);
+    }, 3000);
+    return () => clearInterval(interval);
   }, [dateFilter]);
 
   // Auto-refresh when doctor finishes consultation, prescription is created, or payment is completed
@@ -137,7 +227,23 @@ export default function Prescriptions() {
     loadVisits(true);
   });
 
-  // Voice Announcement
+  // Voice Announcement for Payment Received
+  function announcePaymentReceived(queueNumber: string, patientName: string) {
+    if ("speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const text = `Perhatian bagian Farmasi, pembayaran pasien nomor antrean ${queueNumber}, atas nama ${patientName}, telah lunas. Obat siap diracik dan diserahkan.`;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "id-ID";
+        utterance.rate = 0.94;
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        console.warn("Speech synthesis error:", e);
+      }
+    }
+  }
+
+  // Voice Announcement to call patient to pharmacy counter
   function announcePatient(queueNumber: string, patientName: string) {
     if ("speechSynthesis" in window) {
       try {
@@ -175,9 +281,9 @@ export default function Prescriptions() {
     }
   }
 
-  // Handle Mark All Items in Visit Ready
+  // Handle Mark All Items in Visit Ready (Racik Semua Obat)
   async function handleMarkAllReady(visit: Visit) {
-    const pendingItems = visit.prescriptions.filter((r) => r.status === "PENDING");
+    const pendingItems = (visit.prescriptions || []).filter((r) => r.status === "PENDING");
     if (pendingItems.length === 0) return;
 
     try {
@@ -187,13 +293,49 @@ export default function Prescriptions() {
       }
       setMsg({
         type: "success",
-        text: `Semua obat untuk ${visit.patient.name} (${visit.queueNumber || `A0${visit.id}`}) telah berstatus SIAP.`,
+        text: `Semua obat untuk ${visit.patient.name} (${visit.queueNumber || `A0${visit.id}`}) telah selesai diracik dan berstatus SIAP.`,
       });
       await loadVisits();
     } catch (err: any) {
       setMsg({
         type: "error",
-        text: err?.response?.data?.message || "Gagal memperbarui semua resep.",
+        text: err?.response?.data?.message || "Gagal meracik resep.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Handle Handover Medication to Patient (Serahkan Obat ke Pasien & Pindah ke Laporan)
+  async function handleHandoverMedicine(visit: Visit) {
+    if (visit.invoice?.status !== "PAID") {
+      setMsg({
+        type: "error",
+        text: "Tidak dapat menyerahkan obat: Tagihan pasien belum lunas di kasir/Midtrans.",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Mark [OBAT_DISERAHKAN] in visit notes so pharmacy recognizes completion
+      const currentNotes = visit.notes || "";
+      const updatedNotes = currentNotes.includes("[OBAT_DISERAHKAN]")
+        ? currentNotes
+        : `${currentNotes} [OBAT_DISERAHKAN]`.trim();
+      await clinic.notes(visit.id, updatedNotes);
+      await clinic.status(visit.id, "COMPLETED");
+
+      announcePatient(visit.queueNumber || `A0${visit.id}`, visit.patient.name);
+      setMsg({
+        type: "success",
+        text: `Obat telah diserahkan kepada pasien ${visit.patient.name} (${visit.queueNumber || `A0${visit.id}`}). Pelayanan selesai dan otomatis tercatat di Laporan Farmasi.`,
+      });
+      await loadVisits(true);
+    } catch (err: any) {
+      setMsg({
+        type: "error",
+        text: err?.response?.data?.message || "Gagal menyelesaikan penyerahan obat.",
       });
     } finally {
       setLoading(false);
@@ -203,13 +345,21 @@ export default function Prescriptions() {
   // Filtered Visits for Left Panel
   const filteredVisits = useMemo(() => {
     return visits.filter((v) => {
+      const done = isPharmacyDone(v);
       // Status filter
-      if (statusFilter === "PENDING") {
-        const hasPending = v.prescriptions.some((r) => r.status === "PENDING");
+      if (statusFilter === "ACTIVE") {
+        if (done) return false;
+      } else if (statusFilter === "PENDING") {
+        if (done) return false;
+        const hasPending = (v.prescriptions || []).some((r) => r.status === "PENDING");
         if (!hasPending) return false;
       } else if (statusFilter === "READY") {
-        const allReady = v.prescriptions.every((r) => r.status === "READY");
+        if (done) return false;
+        const rx = v.prescriptions || [];
+        const allReady = rx.length === 0 || rx.every((r) => r.status === "READY");
         if (!allReady) return false;
+      } else if (statusFilter === "COMPLETED") {
+        if (!done) return false;
       }
 
       // Search query
@@ -218,8 +368,8 @@ export default function Prescriptions() {
       const pName = v.patient.name.toLowerCase();
       const qNum = (v.queueNumber || `A0${v.id}`).toLowerCase();
       const docName = v.doctor.name.toLowerCase();
-      const rxMatch = v.prescriptions.some((r) =>
-        r.medicine.name.toLowerCase().includes(q)
+      const rxMatch = (v.prescriptions || []).some((r) =>
+        r.medicine?.name?.toLowerCase().includes(q)
       );
 
       return (
@@ -239,15 +389,16 @@ export default function Prescriptions() {
   // Totals for selected visit
   const totalMedicinePrice = useMemo(() => {
     if (!selectedVisit) return 0;
-    return selectedVisit.prescriptions.reduce(
-      (sum, r) => sum + Number(r.medicine.price || 0) * r.quantity,
+    return (selectedVisit.prescriptions || []).reduce(
+      (sum, r) => sum + Number(r.medicine?.price || 0) * r.quantity,
       0
     );
   }, [selectedVisit]);
 
   const selectedVisitAllReady = useMemo(() => {
     if (!selectedVisit) return false;
-    return selectedVisit.prescriptions.every((r) => r.status === "READY");
+    const rx = selectedVisit.prescriptions || [];
+    return rx.length === 0 || rx.every((r) => r.status === "READY");
   }, [selectedVisit]);
 
   return (
@@ -290,12 +441,22 @@ export default function Prescriptions() {
             )}
             <span>{msg.text}</span>
           </div>
-          <button
-            onClick={() => setMsg(null)}
-            className="text-xs font-bold opacity-60 hover:opacity-100 transition px-2 py-1"
-          >
-            Tutup
-          </button>
+          <div className="flex items-center gap-3">
+            {msg.type === "success" && (
+              <button
+                onClick={() => navigate("/dashboard/pharmacist/reports")}
+                className="text-xs font-bold text-emerald-800 underline hover:text-emerald-950 transition"
+              >
+                Buka Laporan →
+              </button>
+            )}
+            <button
+              onClick={() => setMsg(null)}
+              className="text-xs font-bold opacity-60 hover:opacity-100 transition px-2 py-1"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
       )}
 
@@ -321,16 +482,16 @@ export default function Prescriptions() {
             </div>
 
             {/* Status filter tabs */}
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1 text-[11px] font-bold">
+            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-200/60 p-1 text-[10px] font-bold">
               <button
-                onClick={() => setStatusFilter("ALL")}
+                onClick={() => setStatusFilter("ACTIVE")}
                 className={`rounded-lg py-1.5 transition ${
-                  statusFilter === "ALL"
+                  statusFilter === "ACTIVE"
                     ? "bg-white text-[#1B3C53] shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Semua
+                Diproses ({visits.filter((v) => !isPharmacyDone(v)).length})
               </button>
               <button
                 onClick={() => setStatusFilter("PENDING")}
@@ -340,7 +501,7 @@ export default function Prescriptions() {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Menunggu
+                Racik ({visits.filter((v) => !isPharmacyDone(v) && (v.prescriptions || []).some((r) => r.status === "PENDING")).length})
               </button>
               <button
                 onClick={() => setStatusFilter("READY")}
@@ -350,7 +511,17 @@ export default function Prescriptions() {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Siap
+                Siap ({visits.filter((v) => !isPharmacyDone(v) && ((v.prescriptions || []).length === 0 || (v.prescriptions || []).every((r) => r.status === "READY"))).length})
+              </button>
+              <button
+                onClick={() => setStatusFilter("COMPLETED")}
+                className={`rounded-lg py-1.5 transition ${
+                  statusFilter === "COMPLETED"
+                    ? "bg-indigo-700 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Selesai ({visits.filter((v) => isPharmacyDone(v)).length})
               </button>
             </div>
 
@@ -379,8 +550,10 @@ export default function Prescriptions() {
             {filteredVisits.map((v) => {
               const qNum = v.queueNumber || `A0${v.id}`;
               const isSelected = v.id === selectedVisitId;
-              const allReady = v.prescriptions.every((r) => r.status === "READY");
-              const pendingCount = v.prescriptions.filter((r) => r.status === "PENDING").length;
+              const rxList = v.prescriptions || [];
+              const allReady = rxList.length === 0 || rxList.every((r) => r.status === "READY");
+              const pendingCount = rxList.filter((r) => r.status === "PENDING").length;
+              const isDone = isPharmacyDone(v);
 
               return (
                 <div
@@ -388,7 +561,7 @@ export default function Prescriptions() {
                   onClick={() => setSelectedVisitId(v.id)}
                   className={`cursor-pointer rounded-xl p-3 transition border text-xs ${
                     isSelected
-                      ? "border-[#1B3C53] bg-teal-50/50 shadow-xs"
+                      ? "border-[#1B3C53] bg-teal-50/50 shadow-xs ring-1 ring-[#1B3C53]"
                       : "border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/50"
                   }`}
                 >
@@ -397,17 +570,30 @@ export default function Prescriptions() {
                       {qNum}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span
-                        className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
-                          v.invoice?.status === "PAID"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {v.invoice?.status === "PAID" ? "LUNAS" : "BELUM LUNAS"}
-                      </span>
-                      <Badge tone={allReady ? "emerald" : "amber"}>
-                        {allReady ? "SIAP" : `${pendingCount} Menunggu`}
+                      {isDone ? (
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                          DISERAHKAN
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                            v.invoice?.status === "PAID"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {v.invoice?.status === "PAID" ? (
+                            <>
+                              <Sparkles size={10} className="text-emerald-600" />
+                              LUNAS
+                            </>
+                          ) : (
+                            "BELUM LUNAS"
+                          )}
+                        </span>
+                      )}
+                      <Badge tone={isDone ? "indigo" : allReady ? "emerald" : "amber"}>
+                        {isDone ? "SELESAI" : allReady ? "SIAP" : `${pendingCount} Menunggu`}
                       </Badge>
                     </div>
                   </div>
@@ -420,7 +606,11 @@ export default function Prescriptions() {
                   </p>
 
                   <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100 pt-1.5">
-                    <span>{v.prescriptions.length} jenis obat</span>
+                    <span>
+                      {rxList.length > 0
+                        ? `${rxList.length} jenis obat`
+                        : "Konsultasi / Tindakan"}
+                    </span>
                     <span>
                       {new Date(v.visitDate).toLocaleTimeString("id-ID", {
                         hour: "2-digit",
@@ -495,15 +685,42 @@ export default function Prescriptions() {
                       <FileText size={15} /> Salinan Resep
                     </button>
 
-                    {/* Dispense all button */}
-                    {!selectedVisitAllReady && (
+                    {/* Action buttons: Racik Semua Obat or Serahkan Obat or Lihat di Laporan */}
+                    {selectedVisit.status === "COMPLETED" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/40 px-3.5 py-2 text-xs font-bold text-emerald-200">
+                          <CheckCircle2 size={15} /> Obat Telah Diserahkan (Selesai)
+                        </span>
+                        <button
+                          onClick={() => navigate("/dashboard/pharmacist/reports")}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-black text-[#1B3C53] hover:bg-slate-100 shadow-xs transition"
+                        >
+                          <BarChart3 size={14} /> Buka di Laporan ↗
+                        </button>
+                      </div>
+                    ) : !selectedVisitAllReady ? (
                       <button
                         onClick={() => handleMarkAllReady(selectedVisit)}
                         disabled={loading}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-black text-slate-950 hover:bg-emerald-400 shadow-xs transition"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-3.5 py-2 text-xs font-black text-slate-950 hover:bg-teal-400 shadow-xs transition"
                       >
-                        <CheckCheck size={16} /> Siapkan Semua Obat
+                        <CheckCheck size={16} /> Racik & Siapkan Semua Obat
                       </button>
+                    ) : selectedVisit.invoice?.status === "PAID" ? (
+                      <button
+                        onClick={() => handleHandoverMedicine(selectedVisit)}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-400 px-4 py-2 text-xs font-black text-slate-950 hover:bg-emerald-300 shadow-md transition ring-2 ring-emerald-300"
+                      >
+                        <Send size={15} />
+                        {(selectedVisit.prescriptions || []).length > 0
+                          ? "Serahkan Obat ke Pasien (Selesai)"
+                          : "Konfirmasi Pelayanan Selesai"}
+                      </button>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400/20 border border-amber-400/40 px-3.5 py-2 text-xs font-bold text-amber-200">
+                        <AlertTriangle size={15} /> Obat Siap · Menunggu Pembayaran
+                      </div>
                     )}
                   </div>
                 </div>
@@ -572,50 +789,93 @@ export default function Prescriptions() {
                   </Badge>
                 </div>
 
-                {/* PAYMENT STATUS BANNER (Alur Kasir -> Apotek) */}
+                {/* PAYMENT STATUS BANNER (Alur Kasir / Midtrans -> Apotek) */}
                 <div
-                  className={`flex items-center justify-between rounded-xl border p-3.5 text-xs font-semibold ${
+                  className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-xs font-semibold ${
                     selectedVisit.invoice?.status === "PAID"
-                      ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
+                      ? "border-emerald-200 bg-emerald-50/90 text-emerald-800 shadow-2xs"
                       : "border-amber-300 bg-amber-50 text-amber-900"
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-3">
                     {selectedVisit.invoice?.status === "PAID" ? (
                       <>
-                        <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
+                          <ShieldCheck size={20} />
+                        </div>
                         <div>
-                          <p className="font-bold text-emerald-900">
-                            Status Pembayaran: SUDAH LUNAS (Kasir / Midtrans)
-                          </p>
-                          <p className="text-[11px] text-emerald-700">
-                            Pasien telah melunasi tagihan di loket kasir/admin. Obat dapat diserahkan ke pasien.
+                          <div className="flex items-center gap-2">
+                            <p className="font-extrabold text-emerald-950 text-sm">
+                              Status Pembayaran: SUDAH LUNAS
+                            </p>
+                          </div>
+                          <p className="text-[11px] text-emerald-800 mt-0.5">
+                            Pasien telah melunasi tagihan. Obat dapat segera diracik dan diserahkan kepada pasien.
                           </p>
                         </div>
                       </>
                     ) : (
                       <>
-                        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                        <div className="grid h-8 w-8 place-items-center rounded-lg bg-amber-100 text-amber-700 shrink-0">
+                          <AlertTriangle size={20} />
+                        </div>
                         <div>
-                          <p className="font-bold text-amber-900">
-                            Status Pembayaran: MENUNGGU PEMBAYARAN KASIR
+                          <p className="font-extrabold text-amber-950 text-sm">
+                            Status Pembayaran: MENUNGGU PEMBAYARAN PASIEN
                           </p>
-                          <p className="text-[11px] text-amber-700">
-                            Pasien belum melunasi tagihan sebesar Rp {Number(selectedVisit.invoice?.total || totalMedicinePrice).toLocaleString("id-ID")} di loket kasir. Pastikan pasien melunasi sebelum obat diserahkan.
+                          <p className="text-[11px] text-amber-800 mt-0.5">
+                            Pasien belum melunasi tagihan sebesar Rp {Number(selectedVisit.invoice?.total || totalMedicinePrice).toLocaleString("id-ID")}. Anda dapat meracik obat terlebih dahulu, sistem akan otomatis terupdate secara realtime begitu pasien membayar di mobile atau kasir.
                           </p>
                         </div>
                       </>
                     )}
                   </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
-                      selectedVisit.invoice?.status === "PAID"
-                        ? "bg-emerald-200/60 text-emerald-800"
-                        : "bg-amber-200/80 text-amber-900"
-                    }`}
-                  >
-                    {selectedVisit.invoice?.status === "PAID" ? "LUNAS" : "BELUM LUNAS"}
-                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {isPharmacyDone(selectedVisit) ? (
+                      <button
+                        onClick={() => navigate("/dashboard/pharmacist/reports")}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-800 shadow-xs transition"
+                      >
+                        <BarChart3 size={13} /> Lihat di Laporan Farmasi
+                      </button>
+                    ) : selectedVisit.invoice?.status === "PAID" ? (
+                      selectedVisitAllReady ? (
+                        <button
+                          onClick={() => handleHandoverMedicine(selectedVisit)}
+                          disabled={loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 shadow-xs transition"
+                        >
+                          <Send size={13} /> Serahkan Obat (Selesai)
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleMarkAllReady(selectedVisit)}
+                          disabled={loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-teal-700 shadow-xs transition"
+                        >
+                          <CheckCheck size={13} /> Racik Sekarang
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        onClick={() => loadVisits(true)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100/50 shadow-2xs transition"
+                      >
+                        <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> Cek Status
+                      </button>
+                    )}
+
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                        selectedVisit.invoice?.status === "PAID"
+                          ? "bg-emerald-200 text-emerald-900 ring-1 ring-emerald-300"
+                          : "bg-amber-200 text-amber-900"
+                      }`}
+                    >
+                      {selectedVisit.invoice?.status === "PAID" ? "LUNAS" : "BELUM LUNAS"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -632,7 +892,7 @@ export default function Prescriptions() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedVisit.prescriptions.map((rx) => {
+                      {(selectedVisit.prescriptions || []).map((rx) => {
                         const isPending = rx.status === "PENDING";
                         const isLowStock = rx.medicine.stock < rx.quantity;
                         const subtotal = Number(rx.medicine.price || 0) * rx.quantity;
@@ -697,6 +957,33 @@ export default function Prescriptions() {
                           </tr>
                         );
                       })}
+
+                      {(selectedVisit.prescriptions || []).length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <div className="grid h-10 w-10 place-items-center rounded-full bg-teal-50 text-teal-700">
+                                <CheckCircle2 size={20} />
+                              </div>
+                              <p className="font-bold text-slate-800 text-sm">
+                                Pasien tidak memiliki item resep obat fisik (hanya biaya konsultasi / pemeriksaan).
+                              </p>
+                              <p className="text-xs text-slate-400 max-w-md">
+                                Tagihan pasien sebesar Rp {Number(selectedVisit.invoice?.total || 0).toLocaleString("id-ID")} telah berstatus LUNAS.
+                              </p>
+                              {!isPharmacyDone(selectedVisit) && (
+                                <button
+                                  onClick={() => handleHandoverMedicine(selectedVisit)}
+                                  disabled={loading}
+                                  className="mt-2 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700 shadow-sm transition"
+                                >
+                                  <CheckCircle2 size={15} /> Konfirmasi Pelayanan Selesai
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -716,7 +1003,7 @@ export default function Prescriptions() {
                   {/* Billing Calculation */}
                   <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-1.5">
                     <div className="flex justify-between text-slate-600">
-                      <span>Subtotal Obat ({selectedVisit.prescriptions.length} item):</span>
+                      <span>Subtotal Obat ({(selectedVisit.prescriptions || []).length} item):</span>
                       <span className="font-bold">Rp {totalMedicinePrice.toLocaleString("id-ID")}</span>
                     </div>
                     {selectedVisit.invoice && (
@@ -832,7 +1119,7 @@ export default function Prescriptions() {
                 <p className="text-[11px] font-black uppercase text-slate-500">
                   Rincian Obat & Aturan Pakai:
                 </p>
-                {selectedVisit.prescriptions.map((r, i) => (
+                {(selectedVisit.prescriptions || []).map((r, i) => (
                   <div key={r.id} className="rounded-xl bg-white p-3 border border-slate-200 text-xs">
                     <div className="flex justify-between font-bold text-[#1B3C53]">
                       <span>
@@ -845,6 +1132,11 @@ export default function Prescriptions() {
                     </p>
                   </div>
                 ))}
+                {(selectedVisit.prescriptions || []).length === 0 && (
+                  <p className="text-xs text-slate-400 italic py-2">
+                    Pasien ini tidak memiliki item resep obat fisik (konsultasi/pemeriksaan klinik).
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-500 pt-6 border-t border-slate-200">

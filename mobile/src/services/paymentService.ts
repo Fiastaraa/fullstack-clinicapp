@@ -10,7 +10,7 @@ type SnapData = {
   grossAmount: number;
 };
 
-export async function startInvoicePayment(invoiceId: number) {
+export async function startInvoicePayment(invoiceId: number): Promise<SnapData> {
   const response = await apiRequest<ApiResponse<SnapData>>(
     "/payments/snap-token",
     {
@@ -19,33 +19,21 @@ export async function startInvoicePayment(invoiceId: number) {
     }
   );
 
-  if (response.data.token.startsWith("mock-snap-")) {
-    await apiRequest("/payments/mock-settle", {
-      method: "POST",
-      body: JSON.stringify({ invoiceId, method: "E_WALLET" })
-    });
-    return { mode: "mock" as const, orderId: response.data.orderId };
-  }
-
-  const supported = await Linking.canOpenURL(response.data.redirectUrl);
-  if (!supported) throw new Error("Halaman pembayaran tidak dapat dibuka.");
-  await Linking.openURL(response.data.redirectUrl);
-  return {
-    mode: "redirect" as const,
-    orderId: response.data.orderId,
-    redirectUrl: response.data.redirectUrl
-  };
+  return response.data;
 }
 
-export async function confirmInvoicePayment(invoiceId: number) {
+export async function confirmInvoicePayment(
+  invoiceId: number,
+  method: "E_WALLET" | "TRANSFER" = "E_WALLET"
+) {
   try {
     return await apiRequest<ApiResponse<any>>(
-      `/payments/status/INV-${invoiceId}?forceSettle=true`
+      `/payments/status/INV-${invoiceId}?forceSettle=true&method=${method}`
     );
   } catch {
     return await apiRequest<ApiResponse<any>>("/payments/mock-settle", {
       method: "POST",
-      body: JSON.stringify({ invoiceId, method: "E_WALLET" })
+      body: JSON.stringify({ invoiceId, method })
     });
   }
 }

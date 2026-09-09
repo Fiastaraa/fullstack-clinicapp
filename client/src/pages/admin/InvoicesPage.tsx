@@ -91,6 +91,10 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     loadInvoices(true);
+    const interval = setInterval(() => {
+      loadInvoices(false);
+    }, 3000);
+    return () => clearInterval(interval);
   }, [loadInvoices]);
 
   // Real-time auto fetch when invoices or visits change

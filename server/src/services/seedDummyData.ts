@@ -39,21 +39,21 @@ export async function ensureDummyData() {
     const defaultDoctorPassword = await bcrypt.default.hash("Dokter12345", 10);
 
     const doctorsData = [
-      { name: "Dr. Andi Pratama", email: "dr.andi@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
-      { name: "Dr. Dimas Anggara", email: "dr.dimas@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
-      { name: "Dr. Citra Lestari", email: "dr.citra@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
-      { name: "Dr. Budi Santoso, Sp.OG", email: "dr.budi@assistdoc.com", specialization: "Spesialis Kebidanan & Kandungan", poliCode: "OBG" },
-      { name: "Dr. Sarah Wijaya, Sp.A", email: "dr.sarah@assistdoc.com", specialization: "Spesialis Kesehatan Anak", poliCode: "ANK" },
-      { name: "Dr. Hendra Gunawan, Sp.PD", email: "dr.hendra@assistdoc.com", specialization: "Spesialis Penyakit Dalam", poliCode: "INT" },
-      { name: "Dr. Ratna Sari, Sp.M", email: "dr.ratna@assistdoc.com", specialization: "Spesialis Mata", poliCode: "MAT" },
-      { name: "Dr. Denny Kurniawan, Sp.THT-KL", email: "dr.denny@assistdoc.com", specialization: "Spesialis THT", poliCode: "THT" },
-      { name: "Dr. Kevin Sanjaya, Sp.JP", email: "dr.kevin@assistdoc.com", specialization: "Spesialis Jantung & Pembuluh Darah", poliCode: "JAN" },
-      { name: "Dr. Maya Indah, Sp.KK", email: "dr.maya@assistdoc.com", specialization: "Spesialis Kulit & Kelamin", poliCode: "KUL" },
-      { name: "Dr. Rizky Fauzi, Sp.N", email: "dr.rizky@assistdoc.com", specialization: "Spesialis Saraf (Neurolog)", poliCode: "SAR" },
-      { name: "Dr. Wahyu Hidayat, Sp.P", email: "dr.wahyu@assistdoc.com", specialization: "Spesialis Paru & Pernapasan", poliCode: "PAR" },
-      { name: "Dr. Fajar Nugroho, Sp.B", email: "dr.fajar@assistdoc.com", specialization: "Spesialis Bedah Umum", poliCode: "BDH" },
-      { name: "Drg. Anita Rahayu", email: "drg.anita@assistdoc.com", specialization: "Dokter Gigi Umum", poliCode: "GIG" },
-      { name: "Drg. Bayu Pratomo, Sp.KG", email: "drg.bayu@assistdoc.com", specialization: "Spesialis Konservasi Gigi", poliCode: "GIG" },
+      { name: "dr. Andi Pratama", email: "dr.andi@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
+      { name: "dr. Dimas Anggara", email: "dr.dimas@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
+      { name: "dr. Citra Lestari", email: "dr.citra@assistdoc.com", specialization: "Dokter Umum", poliCode: "UMU" },
+      { name: "dr. Budi Santoso, Sp.OG", email: "dr.budi@assistdoc.com", specialization: "Spesialis Kebidanan & Kandungan", poliCode: "OBG" },
+      { name: "dr. Sarah Wijaya, Sp.A", email: "dr.sarah@assistdoc.com", specialization: "Spesialis Kesehatan Anak", poliCode: "ANK" },
+      { name: "dr. Hendra Gunawan, Sp.PD", email: "dr.hendra@assistdoc.com", specialization: "Spesialis Penyakit Dalam", poliCode: "INT" },
+      { name: "dr. Ratna Sari, Sp.M", email: "dr.ratna@assistdoc.com", specialization: "Spesialis Mata", poliCode: "MAT" },
+      { name: "dr. Denny Kurniawan, Sp.THT-KL", email: "dr.denny@assistdoc.com", specialization: "Spesialis THT", poliCode: "THT" },
+      { name: "dr. Kevin Sanjaya, Sp.JP", email: "dr.kevin@assistdoc.com", specialization: "Spesialis Jantung & Pembuluh Darah", poliCode: "JAN" },
+      { name: "dr. Maya Indah, Sp.KK", email: "dr.maya@assistdoc.com", specialization: "Spesialis Kulit & Kelamin", poliCode: "KUL" },
+      { name: "dr. Rizky Fauzi, Sp.N", email: "dr.rizky@assistdoc.com", specialization: "Spesialis Saraf (Neurolog)", poliCode: "SAR" },
+      { name: "dr. Wahyu Hidayat, Sp.P", email: "dr.wahyu@assistdoc.com", specialization: "Spesialis Paru & Pernapasan", poliCode: "PAR" },
+      { name: "dr. Fajar Nugroho, Sp.B", email: "dr.fajar@assistdoc.com", specialization: "Spesialis Bedah Umum", poliCode: "BDH" },
+      { name: "drg. Anita Rahayu", email: "drg.anita@assistdoc.com", specialization: "Dokter Gigi Umum", poliCode: "GIG" },
+      { name: "drg. Bayu Pratomo, Sp.KG", email: "drg.bayu@assistdoc.com", specialization: "Spesialis Konservasi Gigi", poliCode: "GIG" },
     ];
 
     for (const d of doctorsData) {
@@ -93,11 +93,11 @@ export async function ensureDummyData() {
       }
     }
 
-    // Keep demo account doctor@assistdoc.com linked to Dr. Andi Pratama
+    // Keep demo account doctor@assistdoc.com linked to dr. Andi Pratama
     await prisma.user.upsert({
       where: { email: "doctor@assistdoc.com" },
       update: { role: "DOCTOR", password: defaultDoctorPassword },
-      create: { name: "Dr. Andi Pratama", email: "doctor@assistdoc.com", role: "DOCTOR", password: defaultDoctorPassword },
+      create: { name: "dr. Andi Pratama", email: "doctor@assistdoc.com", role: "DOCTOR", password: defaultDoctorPassword },
     });
 
     // -------------------------------------------------------------

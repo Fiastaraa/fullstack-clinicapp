@@ -187,10 +187,8 @@ export async function payInvoice(req: AuthenticatedRequest, res: Response) {
       return res.status(404).json({ success: false, message: "Invoice not found" });
     }
 
-    if (!result.alreadyPaid) {
-      broadcastClinicChange("invoices", id);
-      broadcastClinicChange("visits", invoice.visitId);
-    }
+    broadcastClinicChange("invoices", id);
+    broadcastClinicChange("visits", invoice.visitId);
 
     return res.json({
       success: true,

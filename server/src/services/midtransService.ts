@@ -60,7 +60,6 @@ export class MidtransService {
     }
     const sKey = this.serverKey;
     if (sKey.startsWith("SB-Mid-")) return false;
-    if (sKey.startsWith("Mid-server-")) return true;
     return false;
   }
 
